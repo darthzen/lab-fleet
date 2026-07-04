@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: retrieval-tool
+  name: retrieval-tool
+  namespace: ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: retrieval-tool
+  template:
+    metadata:
+      labels:
+        app: retrieval-tool
+    spec:
+      containers:
+      - env:
+        - name: OLLAMA_URL
+          value: http://ollama.ai.svc.cluster.local:11434
+        - name: MILVUS_URI
+          value: http://milvus.ai.svc.cluster.local:19530
+        - name: EMBED_MODEL
+          value: nomic-embed-text
+        - name: EMBED_DIM
+          value: '768'
+        - name: SOURCES
+          value: k8s_docs:k8s_docs
+        image: localhost/retrieval-tool:v1
+        imagePullPolicy: Never
+        name: retrieval-tool
+        ports:
+        - containerPort: 8000
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: retrieval-tool
+  name: retrieval-tool
+  namespace: ai
+spec:
+  ports:
+  - port: 8000
+    targetPort: 8000
+  selector:
+    app: retrieval-tool
+  type: ClusterIP

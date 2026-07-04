@@ -1,0 +1,72 @@
+apiVersion: v1
+data:
+  config.json: "{\n  \"mcpServers\": {\n    \"k8s\": {\n      \"type\": \"streamable-http\"\
+    ,\n      \"url\": \"http://k8s-mcp-server.ai.svc.cluster.local:8080/mcp\"\n  \
+    \  },\n    \"systemd\": {\n      \"type\": \"streamable-http\",\n      \"url\"\
+    : \"http://192.168.7.149:8090/mcp\"\n    }\n  }\n}\n"
+kind: ConfigMap
+metadata:
+  name: mcpo-config
+  namespace: ai
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: mcpo
+  name: mcpo
+  namespace: ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mcpo
+  template:
+    metadata:
+      annotations:
+        config-revision: '1'
+      labels:
+        app: mcpo
+    spec:
+      containers:
+      - args:
+        - --port
+        - '8000'
+        - --api-key
+        - change-me
+        - --config
+        - /config/config.json
+        image: ghcr.io/open-webui/mcpo:latest
+        name: mcpo
+        ports:
+        - containerPort: 8000
+        resources:
+          limits:
+            cpu: 250m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+        volumeMounts:
+        - mountPath: /config
+          name: config
+          readOnly: true
+      volumes:
+      - configMap:
+          name: mcpo-config
+        name: config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: mcpo
+  name: mcpo
+  namespace: ai
+spec:
+  ports:
+  - port: 8000
+    targetPort: 8000
+  selector:
+    app: mcpo
+  type: ClusterIP

@@ -1,0 +1,33 @@
+extraEnv:
+- name: NVIDIA_VISIBLE_DEVICES
+  value: GPU-a69c6398-0353-3234-9f35-af0e02865f33
+- name: NVIDIA_DRIVER_CAPABILITIES
+  value: compute,utility
+- name: OLLAMA_KEEP_ALIVE
+  value: 5m
+- name: OLLAMA_HOST
+  value: 0.0.0.0
+- name: OLLAMA_NUM_PARALLEL
+  value: "1"
+- name: OLLAMA_FLASH_ATTENTION
+  value: "1"
+- name: OLLAMA_KV_CACHE_TYPE
+  value: q8_0
+ollama:
+  gpu:
+    enabled: true
+    number: 1
+    type: nvidia
+  models:
+    pull:
+    - llama3.1
+    - nomic-embed-text
+persistentVolume:
+  enabled: true
+  size: 100Gi
+  storageClass: longhorn
+runtimeClassName: nvidia
+service:
+  loadBalancerIP: 192.168.7.153
+  port: 11434
+  type: LoadBalancer

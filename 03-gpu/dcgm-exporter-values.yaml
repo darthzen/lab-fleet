@@ -1,0 +1,6 @@
+extraEnv:
+- name: DCGM_EXPORTER_DEBUG
+  value: "false"
+runtimeClassName: nvidia
+serviceMonitor:
+  enabled: false

@@ -1,0 +1,21 @@
+extraEnvVars:
+- name: VECTOR_DB
+  value: milvus
+- name: MILVUS_URI
+  value: http://milvus.ai.svc.cluster.local:19530
+- name: RAG_EMBEDDING_ENGINE
+  value: ollama
+- name: RAG_EMBEDDING_MODEL
+  value: nomic-embed-text
+- name: RAG_OLLAMA_BASE_URL
+  value: http://ollama.ai.svc.cluster.local:11434
+ollama:
+  enabled: false
+ollamaUrls:
+- http://ollama.ai.svc.cluster.local:11434
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClass: longhorn
+service:
+  type: LoadBalancer

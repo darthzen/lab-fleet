@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: k8s-mcp-server
+  name: k8s-mcp-server
+  namespace: ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: k8s-mcp-server
+  template:
+    metadata:
+      labels:
+        app: k8s-mcp-server
+    spec:
+      containers:
+      - args:
+        - --mode
+        - streamable-http
+        - --port
+        - '8080'
+        - --read-only
+        env:
+        - name: SERVER_MODE
+          value: streamable-http
+        - name: SERVER_PORT
+          value: '8080'
+        image: ginnux/k8s-mcp-server:latest
+        name: k8s-mcp-server
+        ports:
+        - containerPort: 8080
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+      serviceAccountName: k8s-mcp-server-sa
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: k8s-mcp-server
+  name: k8s-mcp-server
+  namespace: ai
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+  selector:
+    app: k8s-mcp-server
+  type: ClusterIP

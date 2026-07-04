@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: github-mcp-server
+  name: github-mcp-server
+  namespace: ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: github-mcp-server
+  template:
+    metadata:
+      labels:
+        app: github-mcp-server
+    spec:
+      containers:
+      - args:
+        - http
+        - --toolsets
+        - repos
+        - --exclude-tools
+        - create_repository,fork_repository,delete_file
+        - --port
+        - '8080'
+        env:
+        - name: GITHUB_PERSONAL_ACCESS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: token
+              name: github-mcp-token
+        - name: GITHUB_TOOLSETS
+          value: repos
+        image: ghcr.io/github/github-mcp-server:latest
+        name: github-mcp-server
+        ports:
+        - containerPort: 8080
+        resources:
+          limits:
+            cpu: 250m
+            memory: 256Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: github-mcp-server
+  name: github-mcp-server
+  namespace: ai
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+  selector:
+    app: github-mcp-server
+  type: ClusterIP

@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: node-red
+  name: node-red
+  namespace: node-red
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: node-red
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: node-red
+    spec:
+      containers:
+      - env:
+        - name: TZ
+          value: America/Chicago
+        image: nodered/node-red:latest
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 1880
+          initialDelaySeconds: 30
+          periodSeconds: 20
+        name: node-red
+        ports:
+        - containerPort: 1880
+          name: http
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 1880
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: '1'
+            memory: 1Gi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        volumeMounts:
+        - mountPath: /data
+          name: data
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsUser: 1000
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: node-red-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: node-red
+  name: node-red
+  namespace: node-red
+spec:
+  ports:
+  - name: http
+    port: 1880
+    targetPort: 1880
+  selector:
+    app: node-red
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: node-red-data
+  namespace: node-red
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: longhorn

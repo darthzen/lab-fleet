@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: emby
+  name: emby
+  namespace: emby
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: emby
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: emby
+    spec:
+      containers:
+      - env:
+        - name: UID
+          value: '472'
+        - name: GID
+          value: '473'
+        - name: PUID
+          value: '472'
+        - name: PGID
+          value: '473'
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: GPU-5641c03a-6749-62ab-cd11-fd3cd34d29f4
+        - name: NVIDIA_DRIVER_CAPABILITIES
+          value: compute,utility,video
+        image: emby/embyserver:latest
+        name: emby
+        ports:
+        - containerPort: 8096
+          name: http
+        - containerPort: 8920
+          name: https
+        resources:
+          limits:
+            cpu: '6'
+            memory: 8Gi
+            nvidia.com/gpu: '1'
+          requests:
+            cpu: 500m
+            memory: 512Mi
+        volumeMounts:
+        - mountPath: /config
+          name: emby-config
+        - mountPath: /data/stream
+          name: emby-media
+      runtimeClassName: nvidia
+      volumes:
+      - hostPath:
+          path: /data/emby
+          type: Directory
+        name: emby-config
+      - hostPath:
+          path: /data/stream
+          type: Directory
+        name: emby-media
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: emby
+  name: emby
+  namespace: emby
+spec:
+  ports:
+  - name: http
+    port: 8096
+    targetPort: 8096
+  - name: https
+    port: 8920
+    targetPort: 8920
+  selector:
+    app: emby
+  type: LoadBalancer

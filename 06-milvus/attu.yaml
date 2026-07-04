@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: attu
+  name: attu
+  namespace: ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: attu
+  template:
+    metadata:
+      labels:
+        app: attu
+    spec:
+      containers:
+      - env:
+        - name: MILVUS_URL
+          value: http://milvus.ai.svc.cluster.local:19530
+        image: zilliz/attu:v2.6.5
+        name: attu
+        ports:
+        - containerPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: attu
+  name: attu
+  namespace: ai
+spec:
+  ports:
+  - port: 3000
+    targetPort: 3000
+  selector:
+    app: attu
+  type: LoadBalancer

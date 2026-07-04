@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: hermes-agent
+  name: hermes-agent
+  namespace: hermes
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hermes-agent
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: hermes-agent
+    spec:
+      containers:
+      - command:
+        - gateway
+        - run
+        env:
+        - name: HERMES_UID
+          value: '1000'
+        - name: HERMES_GID
+          value: '1000'
+        - name: API_SERVER_ENABLED
+          value: 'true'
+        - name: API_SERVER_HOST
+          value: 0.0.0.0
+        - name: API_SERVER_PORT
+          value: '8642'
+        - name: API_SERVER_KEY
+          valueFrom:
+            secretKeyRef:
+              key: key
+              name: hermes-api-key
+        - name: SLACK_BOT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: SLACK_BOT_TOKEN
+              name: hermes-slack
+        - name: SLACK_APP_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: SLACK_APP_TOKEN
+              name: hermes-slack
+        - name: SLACK_ALLOWED_USERS
+          valueFrom:
+            secretKeyRef:
+              key: SLACK_ALLOWED_USERS
+              name: hermes-slack
+        image: ghcr.io/nousresearch/hermes-agent:latest
+        name: hermes-agent
+        ports:
+        - containerPort: 8642
+          name: api
+        resources:
+          limits:
+            cpu: '2'
+            memory: 2Gi
+          requests:
+            cpu: 100m
+            memory: 512Mi
+        volumeMounts:
+        - mountPath: /opt/data
+          name: data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: hermes-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: hermes-agent
+  name: hermes-agent
+  namespace: hermes
+spec:
+  ports:
+  - name: api
+    port: 8642
+    targetPort: 8642
+  selector:
+    app: hermes-agent
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hermes-data
+  namespace: hermes
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: longhorn

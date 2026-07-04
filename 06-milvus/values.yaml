@@ -1,0 +1,21 @@
+cluster:
+  enabled: false
+etcd:
+  persistence:
+    size: 10Gi
+    storageClass: longhorn
+  replicaCount: 1
+minio:
+  mode: standalone
+  persistence:
+    size: 50Gi
+    storageClass: longhorn
+pulsarv3:
+  enabled: false
+service:
+  type: ClusterIP
+standalone:
+  persistence:
+    persistentVolumeClaim:
+      size: 50Gi
+      storageClass: longhorn

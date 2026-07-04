@@ -1,0 +1,3 @@
+deviceListStrategy: cdi-annotations
+nvidiaDriverRoot: /
+runtimeClassName: nvidia

@@ -1,0 +1,157 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: comfyui
+  name: comfyui
+  namespace: ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: comfyui
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: comfyui
+    spec:
+      containers:
+      - env:
+        - name: COMFY_CMDLINE_EXTRA
+          value: --listen 0.0.0.0
+        - name: WANTED_UID
+          value: '1000'
+        - name: WANTED_GID
+          value: '1000'
+        - name: BASE_DIRECTORY
+          value: /basedir
+        - name: SECURITY_LEVEL
+          value: normal
+        - name: USE_UV
+          value: 'true'
+        image: mmartial/comfyui-nvidia-docker:latest
+        imagePullPolicy: IfNotPresent
+        name: comfyui
+        ports:
+        - containerPort: 8188
+        resources:
+          limits:
+            nvidia.com/gpu: '1'
+        volumeMounts:
+        - mountPath: /basedir
+          name: data
+      runtimeClassName: nvidia
+      securityContext:
+        fsGroup: 1000
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: comfyui-data
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: comfyui-filebrowser
+  name: comfyui-filebrowser
+  namespace: ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: comfyui-filebrowser
+  template:
+    metadata:
+      labels:
+        app: comfyui-filebrowser
+    spec:
+      containers:
+      - args:
+        - --root=/srv
+        - --address=0.0.0.0
+        - --port=8080
+        - --database=/config/filebrowser.db
+        image: filebrowser/filebrowser:latest
+        name: filebrowser
+        ports:
+        - containerPort: 8080
+        resources:
+          limits:
+            cpu: 250m
+            memory: 256Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+        volumeMounts:
+        - mountPath: /srv
+          name: comfyui-data
+          subPath: basedir
+        - mountPath: /config
+          name: fb-config
+      securityContext:
+        fsGroup: 1024
+        runAsGroup: 1024
+        runAsUser: 1024
+      volumes:
+      - name: comfyui-data
+        persistentVolumeClaim:
+          claimName: comfyui-data
+      - emptyDir: {}
+        name: fb-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: comfyui
+  name: comfyui
+  namespace: ai
+spec:
+  ports:
+  - port: 8188
+    targetPort: 8188
+  selector:
+    app: comfyui
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: comfyui-filebrowser
+  name: comfyui-filebrowser
+  namespace: ai
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+  selector:
+    app: comfyui-filebrowser
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: comfyui-data
+  namespace: ai
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 150Gi
+  storageClassName: longhorn
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: glm-model-pvc
+  namespace: ai
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 50Gi

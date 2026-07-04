@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: resilio-sync
+  name: resilio-sync
+  namespace: resilio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: resilio-sync
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: resilio-sync
+    spec:
+      containers:
+      - args:
+        - --nodaemon
+        - --config
+        - /mnt/sync/sync.conf
+        command:
+        - /usr/bin/rslsync
+        image: resilio/sync:latest
+        name: resilio-sync
+        ports:
+        - containerPort: 8888
+          name: webui
+        - containerPort: 55555
+          name: sync-tcp
+          protocol: TCP
+        resources:
+          limits:
+            cpu: '2'
+            memory: 2Gi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        volumeMounts:
+        - mountPath: /mnt/sync/config
+          name: resilio-root
+          subPath: config
+        - mountPath: /mnt/sync/folders
+          name: resilio-root
+          subPath: folders
+        - mountPath: /mnt/sync/sync.conf
+          name: resilio-root
+          subPath: sync.conf
+        - mountPath: /mnt/sync/folders/Rick's iPhone 7 Camera backup
+          name: resilio-root
+          subPath: Rick's iPhone 7 Camera backup
+      securityContext:
+        fsGroup: 100
+        runAsGroup: 100
+        runAsUser: 471
+      volumes:
+      - hostPath:
+          path: /data/resilio
+          type: Directory
+        name: resilio-root
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: resilio-sync
+  name: resilio-sync
+  namespace: resilio
+spec:
+  ports:
+  - name: webui
+    port: 8888
+    targetPort: 8888
+  - name: sync-tcp
+    port: 55555
+    protocol: TCP
+    targetPort: 55555
+  selector:
+    app: resilio-sync
+  type: LoadBalancer
