@@ -8,7 +8,7 @@ slightly between BIOS revisions.
 
 | Item | Observed | Target | Nature |
 |---|---|---|---|
-| RAM (4× 16 GB, rated 3600 CL18) | **2133 MT/s** | 3200–3600 | DOCP/XMP off |
+| RAM (4× 16 GB, rated 3600 CL18) | ~~2133~~ → **3600 MT/s ✓** | 3600 | **DONE — DOCP Profile 1** |
 | Tesla V100 (CPU x16 slot, **on a riser**) | Gen3 (8 GT/s) **× x2** | Gen3 x16 | width downtrain — riser |
 | GTX 1070 (chipset x4 slot) | **Gen1 (2.5 GT/s)** x4 | Gen3 x4 | speed downtrain — BIOS |
 
@@ -27,6 +27,7 @@ slightly between BIOS revisions.
   3. Only nudge SoC/VDDG/VDDP if 3200 still isn't clean.
 - **Verify:** `sudo dmidecode -t memory | grep "Configured Memory Speed"` +
   `stressapptest -s 300` (or memtest).
+- **Applied 2026-07:** Profile 1 POSTed stable at the full **3600 MT/s** — no fallback needed.
 
 ## 2. PCIe links — two *separate* problems
 
