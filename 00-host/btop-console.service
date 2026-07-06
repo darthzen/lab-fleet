@@ -1,0 +1,21 @@
+[Unit]
+Description=btop on tty1 console
+After=multi-user.target
+Conflicts=getty@tty1.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/btop
+StandardInput=tty
+StandardOutput=tty
+StandardError=journal
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+Environment=TERM=linux
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target
