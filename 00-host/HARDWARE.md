@@ -48,7 +48,7 @@ Chipset x1           -> onboard GbE
 ## Tuning backlog (free / no-cost wins)
 
 1. **RAM stuck at 2133 MT/s** — enable DOCP in BIOS. Four dual-rank sticks on B550 realistically land ~3000–3200, not 3600, but that is still a ~40–50 % memory-bandwidth gain → faster CPU-offloaded inference.
-2. **Both GPUs under-negotiating** (V100 @ x2, 1070 @ x4/Gen1) — likely a common cause: BIOS PCIe-gen/slot setting or riser signal integrity. Fixing the V100 to x16 mainly speeds **model load time** (in-VRAM inference is insensitive to link width).
+2. **Both GPUs under-negotiating** — root causes now identified (see [`BIOS-TUNING.md`](BIOS-TUNING.md)): **V100 @ x2** is the **riser** (bifurcation only offers Auto/2×8/1×8+2×4/4×4 — none can yield x2 → replace with a shielded Gen4 x16 riser); **1070 @ Gen1** is a **BIOS PCIe-gen** setting (set chipset slot to Auto/Gen3). Fixing the V100 mainly speeds **model load time** (in-VRAM inference is insensitive to link width).
 3. **PSU is the expansion ceiling** — see below.
 
 ## Expansion envelope
