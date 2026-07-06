@@ -10,7 +10,7 @@ this current when hardware changes.
 |---|---|
 | CPU | **AMD Ryzen 7 3700X** — 8C/16T, Zen 2, socket AM4, 65 W TDP (~88 W PPT). PCIe **4.0**. No iGPU. |
 | Motherboard | **Gigabyte B550M AORUS PRO** (micro-ATX, B550). BIOS **F20a** (2026-04-14). |
-| RAM | **64 GB DDR4** — 4× 16 GB Corsair Vengeance (`CMW32GX4M2D3600C18` / `...Z3600C18`), rated 3600 CL18. **Currently running 2133 MT/s — DOCP/XMP not enabled** (see Tuning backlog). |
+| RAM | **64 GB DDR4** — 4× 16 GB Corsair Vengeance (`CMW32GX4M2D3600C18` / `...Z3600C18`), rated 3600 CL18. **Running 3600 MT/s — DOCP enabled (2026-07).** |
 | Case | **Thermaltake Core P3 ATX** open-frame (tempered glass, wall-mountable, riser-friendly). Physical room for 2 large GPUs. |
 | PSU | **Thermaltake Smart Pro RGB 650 W** (80+ Bronze, modular). **This is the expansion ceiling** — see PSU note. |
 
@@ -47,7 +47,7 @@ Chipset x1           -> onboard GbE
 
 ## Tuning backlog (free / no-cost wins)
 
-1. **RAM stuck at 2133 MT/s** — enable DOCP in BIOS. Four dual-rank sticks on B550 realistically land ~3000–3200, not 3600, but that is still a ~40–50 % memory-bandwidth gain → faster CPU-offloaded inference.
+1. ~~RAM stuck at 2133 MT/s~~ — **DONE (2026-07): DOCP enabled, stable at the full 3600 MT/s** (4× dual-rank hit rated speed, better than the ~3200 expected). ~40–50 % memory-bandwidth gain.
 2. **Both GPUs under-negotiating** — root causes now identified (see [`BIOS-TUNING.md`](BIOS-TUNING.md)): **V100 @ x2** is the **riser** (bifurcation only offers Auto/2×8/1×8+2×4/4×4 — none can yield x2 → replace with a shielded Gen4 x16 riser); **1070 @ Gen1** is a **BIOS PCIe-gen** setting (set chipset slot to Auto/Gen3). Fixing the V100 mainly speeds **model load time** (in-VRAM inference is insensitive to link width).
 3. **PSU is the expansion ceiling** — see below.
 
