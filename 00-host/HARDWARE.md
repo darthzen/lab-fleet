@@ -57,3 +57,23 @@ Chipset x1           -> onboard GbE
 - The open-frame case + riser cables make 2-GPU placement easy; NVLink is possible with **matched** cards at the correct bridge spacing (NVLink bridges join same-family cards only — e.g. V100↔V100 or 3090↔3090, never cross-generation).
 - **Binding constraint for any dual-GPU build = the 650 W PSU.** V100 alone ≈ 62 % load; two high-power GPUs (2× 3090 ≈ 850 W peak, or V100 + 3090 ≈ 750 W) require a **1000 W+** unit.
 - **Cable note:** Thermaltake modular cables are **not** cross-compatible between PSU models/wattages (pinout differs — reuse can damage hardware). A PSU swap uses the *new* unit's cables.
+
+
+## Possible upgrades (not planned)
+
+Prices are used/2026 ballparks — verify at purchase.
+
+- **PSU → 1000–1050 W, fully modular, 80+ Gold/Platinum, RGB.** *Prerequisite for any
+  dual-GPU build* — the 650 W unit is the ceiling. Keep RGB via an addressable unit
+  that syncs to the AORUS board (RGB Fusion). Options by budget:
+  - Best value / future-proof: **Thermaltake Toughpower GF A3 1050 W** (ATX 3.1 Gold,
+    native 12V-2×6, ~$130) — minimal RGB.
+  - Keep RGB, cheaper: a **Gold RGB 1000 W** (Thermaltake GT RGB / Gigabyte AORUS
+    P1000W, ~$140–160).
+  - Keep RGB, premium: **Thermaltake Toughpower PF1 ARGB 1050 W Platinum** (~$180–230)
+    — 18 addressable LEDs, board sync, higher efficiency.
+  - **Do NOT reuse the Smart Pro RGB modular cables** — pinout differs between models;
+    use the new unit's cables. Only needed alongside a 2nd GPU; not a standalone spend.
+- **GPU expansion** (see *Expansion envelope*): 2× RTX 3090 (48 GB NVLink) for one big
+  model, or V100 + a 3090 (independent) for flexibility — both gated on the PSU upgrade.
+  A single RTX A6000 (48 GB) is the only bigger card that fits the *current* 650 W PSU.
