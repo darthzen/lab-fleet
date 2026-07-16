@@ -5,10 +5,8 @@ extraEnv:
   value: compute,utility
 - name: OLLAMA_KEEP_ALIVE
   value: 5m
-- name: OLLAMA_HOST
-  value: 0.0.0.0
 - name: OLLAMA_NUM_PARALLEL
-  value: "1"
+  value: "2"
 - name: OLLAMA_FLASH_ATTENTION
   value: "1"
 - name: OLLAMA_KV_CACHE_TYPE
@@ -31,3 +29,7 @@ service:
   loadBalancerIP: 192.168.7.153
   port: 11434
   type: LoadBalancer
+tolerations:
+- effect: NoSchedule
+  key: nvidia.com/gpu
+  operator: Exists
