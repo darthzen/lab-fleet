@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "86525e5261cf",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "04-ollama/README.md",
+    "04-ollama/values.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/86/525e5261cf/0/metadata.json",
+      "transcript": "/86/525e5261cf/0/full.jsonl",
+      "compact_transcript": "/86/525e5261cf/0/transcript.jsonl",
+      "content_hash": "/86/525e5261cf/0/content_hash.txt",
+      "prompt": "/86/525e5261cf/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 17969,
+    "cache_read_tokens": 421182,
+    "output_tokens": 3103,
+    "api_call_count": 13
+  }
+}

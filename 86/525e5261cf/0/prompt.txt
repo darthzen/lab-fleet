@@ -1,0 +1,5 @@
+Read ollama-update-prompt.md and follow intructions
+
+---
+
+Try again.
