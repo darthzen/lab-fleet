@@ -1,0 +1,5 @@
+# Fleet bundle — MetalLB IPAddressPool + L2Advertisement (raw manifests).
+# Depends on the MetalLB CRDs from the metallb bundle; Fleet retries until they
+# exist, so this converges after metallb. Add an explicit dependsOn once the
+# parent bundle's generated name is known.
+defaultNamespace: metallb-system

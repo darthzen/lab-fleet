@@ -1,0 +1,4 @@
+# Fleet bundle — Node-RED (raw manifest). See fleet-wiring-plan Phase 1.
+# Lowest-risk adoption; the plan's Phase-3 starting path. Recreate strategy
+# (single RWO Longhorn writer).
+defaultNamespace: node-red

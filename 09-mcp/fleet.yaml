@@ -1,0 +1,7 @@
+# Fleet bundle — MCP layer (raw manifests): mcpo, k8s-mcp-server,
+# github-mcp-server, and the retrieval-tool (in retrieval-tool/, bundled here
+# since it has no fleet.yaml of its own). See fleet-wiring-plan Phase 1.
+# The github-mcp token Secret is referenced by name and must be created
+# out-of-band — the example is github-mcp-token.secret.example.yaml.txt,
+# renamed to .txt so Fleet never applies it.
+defaultNamespace: ai

@@ -1,0 +1,12 @@
+# Fleet bundle — Open WebUI (Helm). See fleet-wiring-plan Phase 1.
+# StatefulSet-backed chat UI. WEBUI_SECRET_KEY must exist as a k8s Secret before
+# this path is enabled, or stored tool credentials break on restart.
+defaultNamespace: ai
+helm:
+  releaseName: open-webui
+  repo: https://helm.openwebui.com/
+  chart: open-webui
+  version: "14.8.0"
+  valuesFiles:
+    - values.yaml
+  takeOwnership: true

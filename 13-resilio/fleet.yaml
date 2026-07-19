@@ -1,0 +1,4 @@
+# Fleet bundle — Resilio Sync (raw manifest). See fleet-wiring-plan Phase 1.
+# hostPath-backed (restored identity + sync.conf); Recreate strategy, single
+# hostPath writer.
+defaultNamespace: resilio

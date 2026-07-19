@@ -1,0 +1,12 @@
+# Fleet bundle — Milvus (Helm, standalone). See fleet-wiring-plan Phase 1.
+# Multi-component chart (data/etcd/minio on Longhorn PVCs). Attu (the admin UI)
+# is a separate raw-manifest bundle under attu/.
+defaultNamespace: ai
+helm:
+  releaseName: milvus
+  repo: https://zilliztech.github.io/milvus-helm/
+  chart: milvus
+  version: "5.0.22"
+  valuesFiles:
+    - values.yaml
+  takeOwnership: true

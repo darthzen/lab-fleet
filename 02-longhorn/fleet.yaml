@@ -1,0 +1,13 @@
+# Fleet bundle — Longhorn (Helm). See fleet-wiring-plan Phase 1.
+# HIGHEST-RISK adoption (storage). Roll out last, or keep monitor-only; pinned
+# to the running chart so adoption does not trigger an upgrade. values.yaml is
+# intentionally empty (chart defaults) but referenced for provenance.
+defaultNamespace: longhorn-system
+helm:
+  releaseName: longhorn
+  repo: https://charts.longhorn.io
+  chart: longhorn
+  version: "1.12.0"
+  valuesFiles:
+    - values.yaml
+  takeOwnership: true

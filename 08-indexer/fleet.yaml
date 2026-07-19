@@ -1,0 +1,4 @@
+# Fleet bundle — k8s-docs-indexer (raw manifest). See fleet-wiring-plan Phase 1.
+# Locally-built image; the Dockerfile/source in this dir are build inputs, not
+# deployed by Fleet. Only k8s-docs-indexer.yaml is applied.
+defaultNamespace: ai

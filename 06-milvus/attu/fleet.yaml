@@ -1,0 +1,3 @@
+# Fleet bundle — Attu, the Milvus admin UI (raw manifest).
+# Depends on the milvus bundle (points at MILVUS_URL in the ai namespace).
+defaultNamespace: ai

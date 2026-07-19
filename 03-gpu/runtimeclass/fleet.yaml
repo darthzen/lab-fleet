@@ -1,0 +1,4 @@
+# Fleet bundle — cluster-scoped RuntimeClass objects (nvidia, nvidia-experimental).
+# Raw manifest. Must land before nvdp and any GPU workload that sets
+# runtimeClassName: nvidia. Cluster-scoped, so defaultNamespace is nominal.
+defaultNamespace: kube-system

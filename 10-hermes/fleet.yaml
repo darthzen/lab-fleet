@@ -1,0 +1,4 @@
+# Fleet bundle — Hermes agent (raw manifest). See fleet-wiring-plan Phase 1.
+# Slack AI agent; Slack/API tokens are referenced as Secrets and must exist
+# before this path is enabled or the workload reports not-ready.
+defaultNamespace: hermes

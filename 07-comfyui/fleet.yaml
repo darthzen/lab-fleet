@@ -1,0 +1,3 @@
+# Fleet bundle — ComfyUI (raw manifests). See fleet-wiring-plan Phase 1.
+# GTX 1070 via the device plugin; manifests carry their own namespace.
+defaultNamespace: ai

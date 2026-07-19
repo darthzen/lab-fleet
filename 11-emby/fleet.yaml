@@ -1,0 +1,4 @@
+# Fleet bundle — Emby (raw manifest). See fleet-wiring-plan Phase 1.
+# s6-overlay image: starts as root, drops via UID/GID env — no pod-level
+# securityContext (that breaks s6). GTX 1070 transcode pinned by UUID.
+defaultNamespace: emby

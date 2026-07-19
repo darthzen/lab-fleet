@@ -1,0 +1,11 @@
+# Fleet bundle — DCGM exporter (Helm). See fleet-wiring-plan Phase 1.
+# Deployed into cattle-monitoring-system alongside rancher-monitoring.
+defaultNamespace: cattle-monitoring-system
+helm:
+  releaseName: dcgm-exporter
+  repo: https://nvidia.github.io/dcgm-exporter/helm-charts
+  chart: dcgm-exporter
+  version: "4.8.2"
+  valuesFiles:
+    - dcgm-exporter-values.yaml
+  takeOwnership: true

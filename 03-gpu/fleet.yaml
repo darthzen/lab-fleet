@@ -1,0 +1,13 @@
+# Fleet bundle — NVIDIA device plugin (Helm). See fleet-wiring-plan Phase 1.
+# dcgm-exporter (Helm) and the cluster-scoped RuntimeClass objects are separate
+# bundles under dcgm-exporter/ and runtimeclass/. The RuntimeClass should land
+# before nvdp so GPU pods can schedule.
+defaultNamespace: nvidia-device-plugin
+helm:
+  releaseName: nvdp
+  repo: https://nvidia.github.io/k8s-device-plugin
+  chart: nvidia-device-plugin
+  version: "0.19.2"
+  valuesFiles:
+    - nvdp-values.yaml
+  takeOwnership: true

@@ -1,0 +1,15 @@
+# Fleet bundle — MetalLB (Helm). See fleet-wiring-plan Phase 1.
+# Adopts the hand-installed release; pinned to the running chart so Fleet does
+# not upgrade on adoption. IPAddressPool/L2Advertisement are a separate bundle
+# under pools/ (they need the MetalLB CRDs to exist first).
+# traefik-values.yaml is NOT bundled — Traefik is k3s-bundled and managed via
+# k3s HelmChartConfig, not Fleet; the file is kept here for reference only.
+defaultNamespace: metallb-system
+helm:
+  releaseName: metallb
+  repo: https://metallb.github.io/metallb
+  chart: metallb
+  version: "0.16.1"
+  valuesFiles:
+    - metallb-values.yaml
+  takeOwnership: true
