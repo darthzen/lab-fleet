@@ -1,0 +1,5 @@
+Read the handoff doc and execute.
+
+---
+
+The Cowork session I was in wrote changes instead of creating a handoff document and having me come do the writes and commits in code to preserve all the metadata. I told it to revert the changes and create the handoff so we could go through the proper path.

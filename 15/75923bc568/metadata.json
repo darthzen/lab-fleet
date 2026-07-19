@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "1575923bc568",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "01-networking/README.md",
+    "01-networking/fleet.yaml",
+    "01-networking/pools/fleet.yaml",
+    "02-longhorn/fleet.yaml",
+    "03-gpu/README.md",
+    "03-gpu/dcgm-exporter/fleet.yaml",
+    "03-gpu/fleet.yaml",
+    "03-gpu/runtimeclass/fleet.yaml",
+    "04-ollama/fleet.yaml",
+    "05-open-webui/fleet.yaml",
+    "06-milvus/README.md",
+    "06-milvus/attu/fleet.yaml",
+    "06-milvus/fleet.yaml",
+    "07-comfyui/fleet.yaml",
+    "08-indexer/fleet.yaml",
+    "09-mcp/fleet.yaml",
+    "10-hermes/fleet.yaml",
+    "11-emby/fleet.yaml",
+    "12-node-red/fleet.yaml",
+    "13-resilio/fleet.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/15/75923bc568/0/metadata.json",
+      "transcript": "/15/75923bc568/0/full.jsonl",
+      "compact_transcript": "/15/75923bc568/0/transcript.jsonl",
+      "content_hash": "/15/75923bc568/0/content_hash.txt",
+      "prompt": "/15/75923bc568/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 103,
+    "cache_creation_tokens": 96280,
+    "cache_read_tokens": 4498516,
+    "output_tokens": 37374,
+    "api_call_count": 55
+  }
+}
