@@ -1,0 +1,1 @@
+Ollama version is fine. Leave a handoff doc for the next time I come back to this.
