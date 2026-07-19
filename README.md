@@ -65,7 +65,7 @@ flowchart TD
 | 01 | MetalLB + Traefik | metallb/metallb; k3s-bundled traefik | 0.16.1 / 39.0.7 (v3.6.12) |
 | 02 | Longhorn | longhorn/longhorn | 1.12.0 |
 | 03 | GPU (RuntimeClass, device plugin, DCGM) | nvdp/nvidia-device-plugin | 0.19.2 / dcgm 4.8.2 |
-| 04 | Ollama | otwld ollama-helm | chart 1.60.0 (app 0.30.6) |
+| 04 | Ollama | otwld ollama-helm | chart 1.67.0 (app 0.32.0) |
 | 05 | Open WebUI | open-webui/open-webui | chart 14.8.0 (app 0.9.6) |
 | 06 | Milvus (+ Attu UI) | zilliztech/milvus | chart 5.0.22 (app 2.6.18) |
 | 07 | ComfyUI (+ filebrowser) | mmartial/comfyui-nvidia-docker | latest |
