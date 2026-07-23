@@ -1,3 +1,30 @@
+# Startup hook run by comfyui-nvidia-docker's init on every container start
+# (after venv/ComfyUI setup, before the server launches). Keeps pip deps
+# self-healing across image upgrades and venv rebuilds.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app: comfyui
+  name: comfyui-user-script
+  namespace: ai
+data:
+  user_script.bash: |
+    #!/bin/bash
+    set -e
+    PIP=/comfy/mnt/venv/bin/pip
+
+    # 1. Self-heal: ensure every custom node's python deps are present
+    #    (no-op when satisfied; rebuilds them after a fresh venv).
+    for req in /basedir/custom_nodes/*/requirements.txt; do
+      [ -f "$req" ] && $PIP install --no-cache-dir -r "$req"
+    done
+
+    # 2. Version pins LAST so they win over whatever the steps above pulled.
+    #    torch 2.6 (cu124) breaks with transformers >= 4.54
+    #    (torch.float8_e8m0fnu). Revisit when the image moves to torch >= 2.7.
+    $PIP install --no-cache-dir "transformers==4.51.3"
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -18,37 +45,61 @@ spec:
         app: comfyui
     spec:
       containers:
+      # NOTE: NVIDIA_VISIBLE_DEVICES (GPU pin) is deliberately NOT managed
+      # here — it is set live on the cluster and switched between GPUs as
+      # needed. If a future sync strips it, re-add via kubectl edit/patch.
       - env:
         - name: COMFY_CMDLINE_EXTRA
           value: --listen 0.0.0.0
         - name: WANTED_UID
-          value: '1000'
+          value: '1024'
         - name: WANTED_GID
-          value: '1000'
+          value: '1024'
         - name: BASE_DIRECTORY
           value: /basedir
         - name: SECURITY_LEVEL
           value: normal
         - name: USE_UV
           value: 'true'
-        image: mmartial/comfyui-nvidia-docker:latest
+        image: mmartial/comfyui-nvidia-docker:ubuntu22_cuda12.4.1-latest
         imagePullPolicy: IfNotPresent
         name: comfyui
         ports:
         - containerPort: 8188
+          name: 8188tcp
         resources:
           limits:
             nvidia.com/gpu: '1'
+          requests:
+            nvidia.com/gpu: '1'
         volumeMounts:
+        # basedir = models/custom_nodes/outputs; run = venv + ComfyUI + HF
+        # cache. BOTH must be PVC-backed or installs die with the pod.
         - mountPath: /basedir
           name: data
+          subPath: basedir
+        - mountPath: /comfy/mnt
+          name: data
+          subPath: run
+        - mountPath: /comfy/mnt/user_script.bash
+          name: user-script
+          subPath: user_script.bash
       runtimeClassName: nvidia
       securityContext:
-        fsGroup: 1000
+        fsGroup: 1024
+        runAsGroup: 1024
+        runAsUser: 1024
+        supplementalGroups:
+        - 44
+        - 109
       volumes:
       - name: data
         persistentVolumeClaim:
           claimName: comfyui-data
+      - name: user-script
+        configMap:
+          defaultMode: 0o755
+          name: comfyui-user-script
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -110,11 +161,11 @@ metadata:
   namespace: ai
 spec:
   ports:
-  - port: 8188
+  - port: 80
     targetPort: 8188
   selector:
     app: comfyui
-  type: ClusterIP
+  type: LoadBalancer
 ---
 apiVersion: v1
 kind: Service
