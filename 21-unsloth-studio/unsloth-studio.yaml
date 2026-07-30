@@ -166,13 +166,26 @@ spec:
   - ReadWriteOnce
   resources:
     requests:
-      # 100Gi: room for a couple of 13B-class fp16 base models in the HF cache
-      # plus datasets and LoRA checkpoint sets. Sized against Longhorn pool
-      # pressure (~412Gi of ~500Gi already allocated before this claim);
-      # Longhorn supports online expansion, so grow deliberately rather than
-      # over-claiming. Full-model (non-LoRA) fine-tuning checkpoints would blow
-      # this budget — that workload does not belong on this pool.
-      storage: 100Gi
+      # 70Gi: room for a 13B-class fp16 base model in the HF cache plus
+      # datasets and LoRA checkpoint sets. Longhorn supports online expansion,
+      # so grow deliberately rather than over-claiming. Full-model (non-LoRA)
+      # fine-tuning checkpoints would blow this budget — that workload does
+      # not belong on this pool.
+      #
+      # REDUCED FROM 100Gi ON 2026-07-30, and the reason is worth keeping.
+      # This claim was written when the Longhorn pool looked like ~412Gi of
+      # ~500Gi. The real constraint is the disk's scheduling budget —
+      # (storageMaximum - storageReserved) x over-provisioning% — which was
+      # ~764Gi against ~759Gi already scheduled. So this 100Gi claim bound but
+      # never got a replica scheduled: it sat invisible-but-blocked for hours
+      # with actualSize 0, and the moment 22-openchoreo freed 128Gi of budget
+      # it consumed 100Gi of it instantly, starving OpenChoreo's Prometheus.
+      #
+      # A claim that cannot schedule a replica still holds budget the instant
+      # one frees up. Size this to what a run actually needs, not to the
+      # ceiling — and expand when a real workload needs it, which is exactly
+      # what Longhorn online expansion is for.
+      storage: 70Gi
   # Explicit — the cluster default StorageClass is local-path, so omitting
   # this is a bug (see the glm-model-pvc note in 07-comfyui/comfyui.yaml).
   storageClassName: longhorn
