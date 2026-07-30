@@ -261,6 +261,58 @@ itself — deleting the Cluster object here does not touch it.
 
 ## Adoption log
 
+`2026-07-29` — **`lab-emby`, `lab-resilio`, `lab-hermes` adopted.** All four
+namespaces now Fleet-managed; every BundleDeployment reports
+`ready=true, nonModified=true`.
+
+`lab-emby` and `lab-resilio` were clean no-ops on the same evidence as node-red
+below: identical pod UIDs and startTimes, restart counts unchanged (emby 2,
+resilio 13), rollout revisions unchanged, no new ReplicaSets, `kubectl diff`
+clean. Only `metadata.generation` moved (4→5 and 2→3).
+
+### `lab-hermes` needed a manual step first — read this before adopting anything else
+
+Adoption failed outright at first, with Fleet stuck in `ErrApplied`:
+
+```
+cannot patch "hermes-agent" with kind Deployment: Deployment.apps "hermes-agent"
+is invalid: spec.template.spec.containers[1].env[4].valueFrom: Invalid value: "":
+may not be specified when `value` is not empty
+```
+
+**Cause.** The repo converts `HERMES_WEBUI_PASSWORD` from an inline `value:` to a
+`secretKeyRef`. Kubernetes merges `env` lists **by `name`**, so Helm's
+strategic-merge patch laid `valueFrom` *on top of* the live `value` instead of
+replacing it, and the API server rejects an env var carrying both. Helm could not
+emit a directive to delete the live `value`, because the object was not yet
+Helm-owned — there was no prior release manifest to diff against. It retried
+~16 times, burning Helm revisions, and never touched the Deployment.
+
+**Fix.** Make live match the repo *before* letting Fleet adopt it. A client-side
+`kubectl apply` can do what Helm could not, because the live object carried
+`kubectl.kubernetes.io/last-applied-configuration` containing the inline value,
+which gives `apply` the third input it needs for a proper 3-way merge:
+
+```bash
+kubectl apply -f 10-hermes/hermes.yaml     # removes value:, adds valueFrom:
+kubectl -n hermes rollout status deploy/hermes-agent --timeout=300s
+kubectl --context rancher -n fleet-default patch gitrepo lab-hermes \
+  --type=merge -p '{"spec":{"forceSyncGeneration":1}}'
+```
+
+Fleet then adopted it immediately. The pod restarted once — expected, since this
+*is* a pod template change — and came back with both containers ready, the
+credential unchanged (the Secret was seeded from the live value), Deployment at
+revision 13, and `kubectl diff` finally clean: the repo's one intentional
+divergence is now resolved on the cluster too.
+
+**Generalisation.** Fleet/Helm adoption cannot remove a field that exists on a
+live object but not in the repo, when the field is inside a list merged by key and
+the object is not yet Helm-owned. Any such divergence must be pre-applied by hand.
+Checked the remaining namespaces for the same pattern: **none of them have it**,
+because every other manifest was reconciled to match live exactly. hermes was the
+only intentional divergence in the repo, and it is now closed.
+
 `2026-07-29` — **`lab-node-red` adopted. Verified no-op.** First namespace on
 Fleet. Evidence, before vs after:
 
@@ -281,8 +333,7 @@ no second ReplicaSet was created, rollout history stayed at revision 1, and the
 pod is the original one from ten days earlier. So the bump is real but inert —
 expect it on every adopted Deployment, and do not read it as a restart.
 
-Remaining namespaces, in order: `lab-emby`, `lab-resilio`, `lab-hermes` (needs
-the `hermes-webui` Secret first), `lab-ai` (eight paths, one at a time),
+Remaining namespaces, in order: `lab-ai` (eight paths, one at a time),
 `lab-metallb-system`, `lab-nvidia-device-plugin`,
 `lab-cattle-monitoring-system`, then `lab-longhorn-system` last.
 
