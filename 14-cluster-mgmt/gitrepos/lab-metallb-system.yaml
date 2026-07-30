@@ -11,6 +11,14 @@
 #
 # MED-HIGH RISK: MetalLB owns every LoadBalancer IP in the lab. A bad sync
 # drops service IPs. pools/ needs the MetalLB CRDs, so it converges second.
+#
+# STAGED: this file carries ONLY `01-networking`, so applying it is a single
+# adoption step and stays idempotent. `01-networking/pools` is deliberately left
+# out — see gitrepos/README.md on why a GitRepo file must never hold more than
+# one unadopted path. Add the second path after the first is verified Ready:
+#
+#   kubectl --context rancher -n fleet-default patch gitrepo lab-metallb-system \
+#     --type=merge -p '{"spec":{"paths":["01-networking","01-networking/pools"]}}'
 apiVersion: fleet.cattle.io/v1alpha1
 kind: GitRepo
 metadata:
@@ -21,7 +29,6 @@ spec:
   branch: main
   paths:
     - 01-networking
-    - 01-networking/pools
   # `ash4d-lab` is a bespoke label already on the sdf1 cluster (c-nnzn9). Chosen
   # over management.cattle.io/cluster-name, which Rancher owns and may rewrite.
   # Do NOT reuse site=ash4d — that belongs to the ash4d-site GitRepo and resolves

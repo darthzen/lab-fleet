@@ -14,6 +14,32 @@
 # Note dcgm-exporter deploys into cattle-monitoring-system — see lab-cattle-
 # monitoring-system.yaml. This is the one place namespace grouping splits a
 # numbered dir across two GitRepos.
+#
+# STAGED: this file carries ONLY `03-gpu`, so applying it is a single adoption
+# step and stays idempotent. See gitrepos/README.md on why a GitRepo file must
+# never hold more than one unadopted path.
+#
+# ORDER IS THE REVERSE OF WHAT THE NOTE ABOVE IMPLIES, and deliberately so.
+# "RuntimeClass must land before any GPU pod" is FRESH-INSTALL logic. Nothing is
+# being installed fresh here: `nvidia` and `nvidia-experimental` already exist on
+# the cluster and the device-plugin DaemonSets already run under
+# runtimeClassName: nvidia. So the chart is the SAFE first step, and
+# 03-gpu/runtimeclass is the RISKY second one — not the other way round.
+#
+# WHY runtimeclass IS RISKY — VERIFY BEFORE ADDING IT.
+# The live RuntimeClasses are owned by k3s, not by us. They carry:
+#     objectset.rio.cattle.io/owner-gvk: k3s.cattle.io/v1, Kind=Addon
+#     objectset.rio.cattle.io/owner-name: runtimes
+# i.e. they come from k3s's bundled `runtimes` Addon and are as old as the
+# cluster. Adopting them points Fleet and k3s's addon controller at the same
+# cluster-scoped objects, and a tug-of-war there breaks GPU scheduling for
+# ollama, comfyui and dcgm-exporter at once. `03-gpu/runtimeclass/
+# nvidia-runtimeclass.yaml` also has the objectset annotations committed into it
+# verbatim, which is a symptom of the same problem.
+# Resolve the ownership question first; this path may simply not belong in Fleet.
+#
+#   kubectl --context rancher -n fleet-default patch gitrepo lab-nvidia-device-plugin \
+#     --type=merge -p '{"spec":{"paths":["03-gpu","03-gpu/runtimeclass"]}}'
 apiVersion: fleet.cattle.io/v1alpha1
 kind: GitRepo
 metadata:
@@ -24,7 +50,6 @@ spec:
   branch: main
   paths:
     - 03-gpu
-    - 03-gpu/runtimeclass
   # `ash4d-lab` is a bespoke label already on the sdf1 cluster (c-nnzn9). Chosen
   # over management.cattle.io/cluster-name, which Rancher owns and may rewrite.
   # Do NOT reuse site=ash4d — that belongs to the ash4d-site GitRepo and resolves

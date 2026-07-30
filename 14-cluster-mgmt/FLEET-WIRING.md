@@ -178,6 +178,21 @@ hand-tuning habits this cluster has (see the ComfyUI and Ollama notes below).
   kubectl diff -n <ns> -f /tmp/m.yaml
   ```
 
+  A diff here means the **recorded release** disagrees with live. That is worth
+  knowing, but it is not the same as the *repo* disagreeing with live — and only
+  the latter decides whether adoption changes anything. Pair this with the
+  `helm template` render check in the `lab-ai` adoption-log entry; on open-webui
+  the two checks give opposite answers, and the render is the one that was right.
+
+- **`03-gpu/runtimeclass` is contested — k3s owns those objects.** The live
+  `nvidia` / `nvidia-experimental` RuntimeClasses carry
+  `objectset.rio.cattle.io/owner-gvk: k3s.cattle.io/v1, Kind=Addon` and
+  `owner-name: runtimes`: they come from k3s's bundled `runtimes` Addon, not from
+  this repo. Adopting the path aims Fleet and k3s's addon controller at the same
+  cluster-scoped objects, and losing that tug-of-war breaks GPU scheduling for
+  ollama, comfyui and dcgm-exporter at once. The path has been **removed from
+  `gitrepos/lab-nvidia-device-plugin.yaml` pending a decision** — leaving these to
+  k3s, like Traefik, is a legitimate outcome. Found 2026-07-29; not yet resolved.
 - **Longhorn replica count is the single most dangerous default here.** The chart
   defaults to 3 replicas; this one-node cluster runs 1. Adopting Longhorn without
   `02-longhorn/values.yaml`'s `persistence.defaultClassReplicaCount: 1` would
@@ -261,6 +276,71 @@ itself — deleting the Cluster object here does not touch it.
 
 ## Adoption log
 
+`2026-07-29` — **`lab-ai`: the five raw-manifest paths adopted. All no-ops.**
+`08-indexer`, `09-mcp`, `07-comfyui`, `06-milvus/attu`,
+`04-ollama/ollama-exporter` — added one at a time, each reaching
+`ready=true, nonModified=true` on its first sync with no errors and no
+`ErrApplied` retries. Each path became its own Helm release at revision 1
+(`lab-ai-<path>`), so the `ai` namespace now holds five Fleet releases alongside
+the three pre-existing chart releases.
+
+**The three Helm paths (`04-ollama`, `05-open-webui`, `06-milvus`) are
+deliberately NOT yet added** — pre-flight says they should be no-ops too (see
+below), but they were left for a separate approved step.
+
+Evidence, whole-namespace snapshot before vs after all five:
+
+| Check | Result |
+|---|---|
+| Pod UIDs / startTimes / restart counts | **all identical** — nothing restarted |
+| ReplicaSets (46 of them) | **identical**, no new ones, same replica counts |
+| CronJob `generation` | **unchanged** (5 / 2 / 2) |
+| Deployment `generation` | +1 on each of the 8 adopted — inert, as with node-red |
+| StatefulSets (`open-webui`, `milvus-etcd`) | untouched — not in these bundles |
+| `ollama-exporter` 9401 proxy | live-probed, returns `{"version":"0.32.0"}` |
+| ComfyUI | still `replicas: 0`, not scaled up |
+| `attu` Service | still `ClusterIP`, Ingress intact |
+
+Note the generation bump lands on Deployments but **not** on CronJobs, which
+narrows the earlier node-red observation: Helm rewrites the Deployment spec to
+identical values, and CronJobs come out untouched entirely.
+
+### Pre-flight that actually predicts Helm adoption — use this, not `helm get manifest`
+
+The watch-out below says to diff `helm get manifest <release>` against live. That
+catches out-of-band edits, but it does **not** answer the question that matters:
+*what will Fleet apply?* Render the chart the way Fleet will — pinned version plus
+the repo's own `values.yaml` — and diff **that** against live:
+
+```bash
+helm template <release> <repo>/<chart> --version <pinned> -n ai \
+  -f <dir>/values.yaml --no-hooks > /tmp/render.yaml
+kubectl diff -n ai -f /tmp/render.yaml
+```
+
+`open-webui` is exactly why this matters, and the two checks disagree on it:
+
+- `helm get manifest open-webui` vs live → **shows a diff**: the recorded release
+  still says `ollama:11434` for `OLLAMA_BASE_URLS` / `RAG_OLLAMA_BASE_URL`, while
+  live was hand-edited to `ollama-exporter:9401`.
+- `helm template` with `05-open-webui/values.yaml` vs live → **clean**, because
+  the repo's values were already corrected to 9401.
+
+So the alarming diff is *recorded-release* drift, not repo drift, and adoption
+will close it rather than change the cluster. Reading only the first check would
+have stalled this path for no reason. All three charts render clean against live:
+`04-ollama` (release at revision 14), `05-open-webui`, `06-milvus`.
+
+Two gotchas when running these diffs:
+
+- **`kubectl diff -R -f <dir>` fails on the bundle's own `fleet.yaml`** —
+  `Object 'Kind' is missing`. It is Fleet config, not a manifest. Exclude it:
+  `find <dir> -name '*.yaml' -not -name 'fleet.yaml'`.
+- **`helm template` emits `ollama-test-connection`**, a Pod annotated
+  `helm.sh/hook: test`. It is absent from the cluster and will stay absent —
+  test hooks run only on `helm test`, never on install/upgrade, so Fleet will not
+  create it. Pass `--no-hooks` so it does not show up as a phantom addition.
+
 `2026-07-29` — **`lab-emby`, `lab-resilio`, `lab-hermes` adopted.** All four
 namespaces now Fleet-managed; every BundleDeployment reports
 `ready=true, nonModified=true`.
@@ -336,6 +416,13 @@ expect it on every adopted Deployment, and do not read it as a restart.
 Remaining namespaces, in order: `lab-ai` (eight paths, one at a time),
 `lab-metallb-system`, `lab-nvidia-device-plugin`,
 `lab-cattle-monitoring-system`, then `lab-longhorn-system` last.
+
+**Next step:** `lab-ai`'s three Helm paths — `04-ollama`, then `05-open-webui`,
+then `06-milvus`. Pre-flight is already done and all three render clean against
+live (see the `lab-ai` entry above). Widen by patching `spec.paths` — there is
+deliberately **no `gitrepos/lab-ai.yaml`** to apply, because a single file cannot
+express a staged rollout without inviting a one-shot widen. The exact patch and
+verify commands are in `gitrepos/README.md`.
 
 ## Drift reconciliation log
 

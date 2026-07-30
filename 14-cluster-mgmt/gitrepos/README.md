@@ -8,6 +8,10 @@ of any bundle in this repo. Kept here as the versioned source of record.
 
     kubectl --context rancher apply -f 14-cluster-mgmt/gitrepos/lab-node-red.yaml
 
+Applying any file here is a **single** adoption step, and idempotent once adopted —
+no file holds more than one unadopted path (see the rule below). The exception is
+`lab-ai`, which has **no file at all** and is staged by hand — see below.
+
 ## Convention: `lab-<namespace>`
 
 One GitRepo per Kubernetes namespace, so each namespace's workloads can be
@@ -19,9 +23,9 @@ adopted, rolled back, or paused independently of every other.
 | `lab-emby` | `emby` | `11-emby` | low |
 | `lab-resilio` | `resilio` | `13-resilio` | low |
 | `lab-hermes` | `hermes` | `10-hermes` | low–med — needs `hermes-webui` Secret |
-| `lab-ai` | `ai` | 8 paths (04→09) | med — add one at a time |
-| `lab-metallb-system` | `metallb-system` | `01-networking`, `01-networking/pools` | med–high |
-| `lab-nvidia-device-plugin` | `nvidia-device-plugin` | `03-gpu`, `03-gpu/runtimeclass` | med–high |
+| `lab-ai` | `ai` | 8 paths (04→09) | med — **no `.yaml` file, staged by hand — see below** |
+| `lab-metallb-system` | `metallb-system` | `01-networking` — then patch in `01-networking/pools` | med–high |
+| `lab-nvidia-device-plugin` | `nvidia-device-plugin` | `03-gpu` — `03-gpu/runtimeclass` is **on hold, k3s owns it** | med–high |
 | `lab-cattle-monitoring-system` | `cattle-monitoring-system` | `03-gpu/dcgm-exporter` | med |
 | `lab-longhorn-system` | `longhorn-system` | `02-longhorn` | **highest — adopt last** |
 
@@ -29,6 +33,81 @@ Adopt in that order. Within `lab-ai`, add paths one at a time — raw manifests
 (`08-indexer`, `09-mcp`, `07-comfyui`, `06-milvus/attu`,
 `04-ollama/ollama-exporter`) before the Helm charts (`04-ollama`,
 `05-open-webui`, `06-milvus`).
+
+## `lab-ai` deliberately has no `.yaml` file
+
+**There is no `lab-ai.yaml`, on purpose — do not add one.** It used to exist and
+listed all eight paths. That made it a footgun: a single `kubectl apply -f` would
+widen the GitRepo by however many paths were still unadopted, in one shot, which
+is exactly what the one-at-a-time rule exists to prevent. A file whose whole
+convention is "apply me" cannot safely hold a staged rollout, so the staging lives
+here as commands instead.
+
+`spec.paths` is the only field that changes between steps, so widen by patching it
+and leave everything else alone:
+
+```bash
+# Current live state — the five raw-manifest paths (adopted 2026-07-29).
+# Append exactly ONE entry per step, in this order:
+#   04-ollama → 05-open-webui → 06-milvus
+kubectl --context rancher -n fleet-default patch gitrepo lab-ai --type=merge -p '{"spec":{"paths":[
+  "08-indexer","09-mcp","07-comfyui","06-milvus/attu","04-ollama/ollama-exporter",
+  "04-ollama"
+]}}'
+```
+
+Verify before the next step — both must be `true`, and `helm -n ai list` should
+show one new release at revision 1:
+
+```bash
+kubectl --context rancher -n cluster-fleet-default-c-nnzn9-eaf6ebdbb298 \
+  get bundledeployments -o custom-columns=\
+'NAME:.metadata.name,READY:.status.ready,NONMODIFIED:.status.nonModified' | grep lab-ai
+```
+
+Roll back a step by patching `spec.paths` without the entry you just added.
+
+To recreate the GitRepo from scratch, copy a sibling file (they share every field
+but `name` and `paths`), set `name: lab-ai`, and start `paths` at the five raw
+entries above.
+
+## The rule: one unadopted path per file
+
+**A file in this dir must never contain more than one path that is not yet
+adopted.** Otherwise `kubectl apply -f` widens the GitRepo by every unadopted path
+at once, which is precisely what the one-at-a-time rule exists to prevent. Keeping
+this invariant means applying any file here is always a single adoption step, and
+always idempotent once adopted.
+
+`lab-metallb-system.yaml` and `lab-nvidia-device-plugin.yaml` used to carry two
+paths each and were trimmed to their safe first path on 2026-07-29. The second
+path is documented as a patch command in each file's own header comment. Add it
+only after the first is verified Ready. Every other file is single-path.
+
+`lab-ai` is the one namespace with no file at all: it has *five* adopted paths and
+three pending, and a file listing only one unadopted path would misrepresent the
+five that are live. Commands above.
+
+### `03-gpu/runtimeclass` is not just a staging question
+
+While trimming `lab-nvidia-device-plugin.yaml` it turned out the `nvidia` and
+`nvidia-experimental` RuntimeClasses are **owned by k3s**, not by this repo:
+
+    objectset.rio.cattle.io/owner-gvk:  k3s.cattle.io/v1, Kind=Addon
+    objectset.rio.cattle.io/owner-name: runtimes
+
+They ship with k3s's bundled `runtimes` Addon and are as old as the cluster.
+Adopting that path points Fleet and k3s's addon controller at the same
+cluster-scoped objects; if they fight, GPU scheduling breaks for ollama, comfyui
+and dcgm-exporter simultaneously. `03-gpu/runtimeclass/nvidia-runtimeclass.yaml`
+also carries the `objectset.rio.cattle.io/*` annotations committed verbatim — a
+symptom of the same thing.
+
+**This is unresolved.** Decide whether the path belongs in Fleet at all before
+adding it — leaving the RuntimeClasses to k3s is a legitimate answer, in which
+case drop the path and note it alongside Traefik as k3s-bundled and not
+Fleet-managed. It also reverses the stage order the old comment implied: the
+device plugin chart is the safe first step, not the RuntimeClass.
 
 ## Where the convention doesn't map cleanly
 
@@ -64,7 +143,7 @@ goal eventually but will fight this cluster's hand-tuning habits.
 | `lab-emby` | ✅ adopted 2026-07-29 — no-op, no restart |
 | `lab-resilio` | ✅ adopted 2026-07-29 — no-op, no restart |
 | `lab-hermes` | ✅ adopted 2026-07-29 — needed a manual pre-apply; one expected restart |
-| `lab-ai` | not yet applied |
+| `lab-ai` | 🔶 **partial** — 5 raw paths adopted 2026-07-29 (all no-ops). The 3 Helm paths (`04-ollama`, `05-open-webui`, `06-milvus`) are **not yet added to the live GitRepo**. No `.yaml` file — patch `spec.paths` to widen |
 | `lab-metallb-system` | not yet applied |
 | `lab-nvidia-device-plugin` | not yet applied |
 | `lab-cattle-monitoring-system` | not yet applied |
