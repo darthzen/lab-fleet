@@ -5,11 +5,16 @@ metadata:
   labels:
     app.kubernetes.io/name: ollama-code-mcp
 spec:
-  # ClusterIP -- external access goes through ingress.yaml
-  # (https://mcp-ollama.ash4d.com/mcp), since Claude's custom-connector UI
-  # requires an https URL. `kubectl port-forward` remains an option for
-  # ad-hoc local testing.
-  type: ClusterIP
+  # LoadBalancer with a dedicated MetalLB IP (2026-07-31), deliberately
+  # separate from the Traefik address (192.168.7.150) so LAN MCP clients can
+  # hit the server directly over http without the ingress hop. The ingress
+  # (https://mcp-ollama.ash4d.com/mcp) stays -- Claude's custom-connector UI
+  # requires an https URL.
+  #
+  # .165 was the first unused address in lan-pool (192.168.7.150-169, see
+  # 01-networking/pools/) as of 2026-07-31; .150-.164 were all allocated.
+  type: LoadBalancer
+  loadBalancerIP: 192.168.7.165
   selector:
     app.kubernetes.io/name: ollama-code-mcp
   ports:
