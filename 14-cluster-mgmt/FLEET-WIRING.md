@@ -213,7 +213,30 @@ hand-tuning habits this cluster has (see the ComfyUI and Ollama notes below).
   entirely on polling. A blip therefore costs real sync latency, not just a red
   icon.
 
-  Clear it with any metadata write — no generation bump, no job, no redeploy:
+  **Mitigated 2026-07-30, partially.** Every GitRepo file now sets
+  `pollingInterval: 60s` explicitly, which bounds staleness and puts the value
+  under review in git instead of relying on a controller-wide default.
+
+  The remaining knob is `gitjob.syncPeriod`, and it is **deliberately left at
+  `2h`** because it is not ours to change safely. It is a value of the
+  Rancher-managed `fleet` Helm release (`fleet-109.0.4+up0.15.4` in
+  `cattle-fleet-system` on the controller, revision 4 as of 2026-07-30 — Rancher
+  reconciles it, so it does get rewritten). Hand-patching the `gitjob`
+  Deployment's env would be reverted; a manual `helm upgrade` of that release
+  would touch the whole Fleet control plane and could be undone by Rancher's own
+  reconcile, taking the setting with it. The supported change is:
+
+      helm --kube-context rancher -n cattle-fleet-system upgrade fleet \
+        <rancher's fleet chart> --reuse-values --set gitjob.syncPeriod=15m
+
+  Do that only deliberately, and re-check it after any Rancher upgrade. The
+  properly architectural fix is a GitHub webhook so commits are push-triggered
+  and polling latency stops mattering — but the controller is on a LAN address
+  (192.168.7.148) and would need public ingress for GitHub to reach it, which is
+  a bigger change than this problem justifies.
+
+  Clear a stuck one with any metadata write — no generation bump, no job, no
+  redeploy:
 
   ```bash
   kubectl --context rancher -n fleet-default annotate gitrepo <name> \
@@ -280,6 +303,40 @@ hand-tuning habits this cluster has (see the ComfyUI and Ollama notes below).
   So: add an ownership pre-flight before adopting any Helm release that predates
   Fleet. `kubectl apply --server-side --dry-run=server` against the render will
   surface the conflicts that `kubectl diff` hides.
+
+  **The working procedure, proven on cert-manager 2026-07-30.** Hand the fields
+  to Fleet's own field manager, `fleetagent`, *before* applying the GitRepo:
+
+      helm template <rel> <chart> --version <v> -n <ns> -f values.yaml \
+        --no-hooks > /tmp/r.yaml
+
+      # 1. see the conflicts
+      kubectl -n <ns> apply --server-side --field-manager=fleetagent \
+        --dry-run=server -f /tmp/r.yaml
+
+      # 2. confirm the API server would ACCEPT the forced apply
+      kubectl -n <ns> apply --server-side --force-conflicts \
+        --field-manager=fleetagent --dry-run=server -f /tmp/r.yaml
+
+      # 3. confirm what would actually CHANGE, as opposed to merely change owner
+      kubectl diff -f /tmp/r.yaml
+
+      # 4. only if step 3 shows nothing you did not intend, drop --dry-run
+      kubectl -n <ns> apply --server-side --force-conflicts \
+        --field-manager=fleetagent -f /tmp/r.yaml
+
+  Step 3 is what makes this safe: on cert-manager, 5 of 48 objects conflicted
+  (the two webhook configurations' `.rules`, three Deployments'
+  `POD_NAMESPACE.valueFrom.fieldRef`, and the controller's `.args`) but the diff
+  showed only ONE real change — the intended `extraArgs`. Everything else was
+  ownership with byte-identical values, and applied without touching the object:
+  the cainjector and webhook pods kept their original UIDs, and only the
+  controller rolled. All 9 Certificates stayed Ready throughout.
+
+  `fleetagent` (no hyphen) is the manager name, confirmed from `managedFields`
+  on an already-adopted object. Note that `helm` and `fleetagent` can co-own an
+  object happily once values agree — that is why buzz and openshell adopted with
+  no conflict at all: their renders matched live exactly.
 
 - **A nested path with its own `fleet.yaml` deploys as soon as its PARENT path
   is adopted — it is not a staging gate.** Fleet scans the parent path
@@ -499,7 +556,7 @@ Live state after this session — every BundleDeployment `ready=true`:
 | `lab-buzz` | `17-buzz` + nested `/minio` | ✅ all 4 pods unchanged; release 7 → 11. Reported `Modified` until the redis `maxUnavailable` fix |
 | `lab-lab-memory` | `18-lab-memory/raw` **only** | ⚠️ raw OK. **karakeep NOT adopted** — see below |
 | `lab-ai` | + `09-mcp/ollama-code` | ✅ migration done, `ollama-code` namespace deleted |
-| `lab-cert-manager` | — | ⏸ **not applied.** Held deliberately |
+| `lab-cert-manager` | `15-cert-manager` + nested `/issuer` | ✅ adopted after an SSA ownership handoff; controller rolled once, all 9 Certificates stayed Ready |
 
 **The karakeep incident, in order.** Adopting `18-lab-memory` failed on
 server-side-apply field-manager conflicts (see Watch-outs) — `kubectl diff` had
@@ -529,12 +586,18 @@ Re-adopting it requires resolving the field-ownership conflict first — see the
 `kubectl diff` watch-out for why neither `helm.force` nor `managedFields` surgery
 is free on a StatefulSet with an immutable `volumeClaimTemplates`.
 
-**Why cert-manager was held.** It was next in line and is fully built and
-pre-flighted, but it owns the six cert-manager CRDs and is a pre-existing Helm
-release — the same profile as karakeep. Having just demonstrated that (a) SSA
-conflicts are not visible to `kubectl diff` and (b) backing a path out uninstalls
-the release, adopting it would have risked deleting every `Certificate`,
-`Issuer` and `Order` in the cluster. Do the server-side dry-run pre-flight first.
+**cert-manager was adopted later the same day**, once the SSA pre-flight
+procedure existed. It hit 5 conflicts across 48 objects, but the value-level diff
+proved only the intended `extraArgs` change was real, so the ownership handoff
+was safe. Result: the controller pod rolled once, the cainjector and webhook pods
+kept their original UIDs, the DNS-01 args survived Fleet taking over, and all 9
+Certificates plus the ClusterIssuer and 6 CRDs came through untouched. Full
+procedure in the `kubectl diff` watch-out.
+
+**karakeep is the one still unadopted.** Its conflict list includes
+`.spec.volumeClaimTemplates` on a StatefulSet holding real data, so it needs the
+same handoff done deliberately with the Secrets backed up first — see the
+re-adoption steps below.
 
 Everything below this line was written before adoption and describes the
 pre-flight, which remains accurate.
