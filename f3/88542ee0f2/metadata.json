@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "f388542ee0f2",
+  "strategy": "manual-commit",
+  "branch": "fleet-openchoreo-thunder",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "14-cluster-mgmt/FLEET-WIRING.md",
+    "22-openchoreo/observability-events/fleet.yaml",
+    "22-openchoreo/thunder/fleet.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f3/88542ee0f2/0/metadata.json",
+      "transcript": "/f3/88542ee0f2/0/full.jsonl",
+      "compact_transcript": "/f3/88542ee0f2/0/transcript.jsonl",
+      "content_hash": "/f3/88542ee0f2/0/content_hash.txt",
+      "prompt": "/f3/88542ee0f2/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 55,
+    "cache_creation_tokens": 43424,
+    "cache_read_tokens": 1490838,
+    "output_tokens": 12354,
+    "api_call_count": 29
+  }
+}
