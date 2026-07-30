@@ -46,6 +46,14 @@ metadata:
 spec:
   repo: https://github.com/darthzen/lab-fleet
   branch: main
+  # Explicit polling interval. Fleet's default is 15s, but this cluster's
+  # gitjob runs with `gitjob.syncPeriod: 2h` (a Rancher fleet-chart value), and
+  # on 2026-07-30 four GitRepos went dormant for 28+ minutes after a single
+  # transient `context deadline exceeded` against github.com -- they only
+  # recovered when an external write forced a reconcile. Stating the interval
+  # here bounds how stale a repo can get and makes the intent reviewable in git
+  # rather than depending on a controller-wide default. See FLEET-WIRING.md.
+  pollingInterval: 60s
   paths:
     - 15-cert-manager
   # `ash4d-lab` is a bespoke label already on the sdf1 cluster (c-nnzn9). Chosen

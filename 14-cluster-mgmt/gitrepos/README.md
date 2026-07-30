@@ -56,7 +56,7 @@ adopted, rolled back, or paused independently of every other.
 | `lab-metallb-system` | `metallb-system` | `01-networking` — then patch in `01-networking/pools` | med–high |
 | `lab-nvidia-device-plugin` | `nvidia-device-plugin` | `03-gpu` — `03-gpu/runtimeclass` is **on hold, k3s owns it** | med–high |
 | `lab-cattle-monitoring-system` | `cattle-monitoring-system` | `03-gpu/dcgm-exporter` | med |
-| `lab-cert-manager` | `cert-manager` | `15-cert-manager` (+ nested `/issuer`) | **NOT ADOPTED — deliberately held, see below** |
+| `lab-cert-manager` | `cert-manager` | `15-cert-manager` (+ nested `/issuer`) | **ADOPTED** 2026-07-30 after an SSA ownership handoff — owns the 6 CRDs, never delete |
 | `lab-longhorn-system` | `longhorn-system` | `02-longhorn` | **highest — adopt last** |
 
 Adopt in that order. Within `lab-ai`, add paths one at a time — raw manifests

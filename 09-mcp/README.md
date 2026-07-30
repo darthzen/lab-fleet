@@ -36,12 +36,10 @@ in `ai` that pushed straight to Harbor — `kubectl cp` the build context into
 if you ever need to rebuild from a machine with no container runtime.
 
 The single `FOSSA_API_TOKEN` in the Secret is the *only* access control: the
-server does not authenticate callers, so anything that can reach the ClusterIP
-inherits that token's full read access across the FOSSA org. Keep it ClusterIP —
-no ingress, no LoadBalancer — and if it ever needs to leave the namespace, put an
-authenticating proxy in front of it. It binds `0.0.0.0` in-pod only because
-127.0.0.1 would be unreachable through the Service; see the project's
-DECISIONS.md §2.
+server does not authenticate callers, so anything that can reach it inherits that
+token's full read access across the FOSSA org. The private target address is the
+whole security boundary. It binds `0.0.0.0` in-pod only because 127.0.0.1 would be
+unreachable through the Service; see the project's DECISIONS.md §2.
 
 Reached two ways: in-cluster clients use the ClusterIP name, and Claude Code /
 Cowork sessions on the LAN use the Ingress at `https://fossa-mcp.ash4d.com/mcp`
@@ -49,6 +47,15 @@ Cowork sessions on the LAN use the Ingress at `https://fossa-mcp.ash4d.com/mcp`
 only connects from inside the network):
 
     claude mcp add --transport http --scope user fossa https://fossa-mcp.ash4d.com/mcp
+
+Claude Desktop's *custom connector* flow is OAuth-first: it attempts dynamic
+client registration and fails on a no-auth server with `Couldn't register with
+... sign-in service`. That is the client's flow, not a server fault — the server
+returns 404 for every `/.well-known/oauth-*` path and 200 with an `mcp-session-id`
+for `POST /mcp`. Use `claude mcp add` (above) for Claude Code, or bridge Desktop
+through a stdio proxy:
+
+    "fossa": { "command": "npx", "args": ["-y", "mcp-remote", "https://fossa-mcp.ash4d.com/mcp"] }
 
 **DNS-01 gotcha, worth knowing for every cert in this lab:** the LAN intercepts
 outbound port 53 — a pod querying `1.1.1.1` directly still gets the lab
