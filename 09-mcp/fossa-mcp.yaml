@@ -1,0 +1,113 @@
+# fossa-mcp — read-only MCP server for the FOSSA API (software composition
+# analysis: projects, revisions, dependencies, licensing/vulnerability/quality
+# issues, attribution reports). Nine tools, none of which mutate FOSSA state.
+# Source: iCloud Developer/fossa-mcp (Apache-2.0, unofficial — not affiliated
+# with FOSSA, Inc.).
+#
+# Image is built locally and pushed to the in-cluster Harbor, same as
+# ollama-exporter — so this needs the harbor-pull imagePullSecret, which is
+# created out-of-band and is NOT in this repo:
+#   docker build -t registry.ash4d.com/ash4d-lab/fossa-mcp:0.1.0 .
+#   docker push registry.ash4d.com/ash4d-lab/fossa-mcp:0.1.0
+#
+# The FOSSA_API_TOKEN Secret is referenced by name and created out-of-band —
+# see fossa-mcp-token.secret.example.yaml.txt.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: fossa-mcp
+  name: fossa-mcp
+  namespace: ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fossa-mcp
+  template:
+    metadata:
+      labels:
+        app: fossa-mcp
+    spec:
+      containers:
+      - args:
+        - --transport
+        - streamable-http
+        env:
+        # The image defaults to 127.0.0.1 by design (see the project's
+        # DECISIONS.md §2). In a pod that would be unreachable through the
+        # Service, so it binds the pod IP instead. Everything that can reach
+        # this ClusterIP gets the full read access of the one token below —
+        # there is no per-caller auth. Keep it ClusterIP-only.
+        - name: FOSSA_HTTP_HOST
+          value: 0.0.0.0
+        # 8080 to match the other MCP servers in this namespace; the image
+        # itself defaults to 8000.
+        - name: FOSSA_HTTP_PORT
+          value: '8080'
+        - name: FOSSA_LOG_LEVEL
+          value: INFO
+        - name: FOSSA_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: token
+              name: fossa-mcp-token
+        image: registry.ash4d.com/ash4d-lab/fossa-mcp:0.1.0
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        name: server
+        ports:
+        - containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 3
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 250m
+            memory: 256Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+        # Nothing is expected to write to disk (the report tool deliberately
+        # never does), so the root filesystem is read-only; /tmp is a scratch
+        # mount in case a dependency wants one.
+        - mountPath: /tmp
+          name: tmp
+      imagePullSecrets:
+      - name: harbor-pull
+      volumes:
+      - emptyDir: {}
+        name: tmp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: fossa-mcp
+  name: fossa-mcp
+  namespace: ai
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+  selector:
+    app: fossa-mcp
+  type: ClusterIP

@@ -226,6 +226,84 @@ hand-tuning habits this cluster has (see the ComfyUI and Ollama notes below).
   `fleet-default`, no pod restarts or startTime changes downstream. Do **not**
   reach for `fleet.cattle.io/force-update` — that forces an actual redeploy.
 
+- **🔴 "Roll back by removing the path" DESTROYS an adopted Helm release.
+  Learned the hard way on 2026-07-30 — it deleted karakeep.** Removing a path
+  from `spec.paths` deletes that bundle, and deleting a bundle whose Helm release
+  Fleet has taken ownership of **uninstalls the release**. That is fine for a
+  bundle still stuck in `WaitApplied` that never got ownership, and fine for raw
+  bundles Fleet created itself. It is NOT fine once `takeOwnership` has
+  succeeded: Fleet becomes the release owner, and removing the path runs the
+  equivalent of `helm uninstall`.
+
+  What it cost: karakeep's StatefulSets, its chrome Deployment, its Service and
+  Ingress, and the `karakeep-meilesearch` PVC were all deleted. Recovery was a
+  plain `helm upgrade --install` with this repo's own values.
+
+  What survived, and why it matters:
+  - `data-karakeep-0` — a StatefulSet `volumeClaimTemplates` PVC. Kubernetes
+    does not garbage-collect these when the StatefulSet goes, so the primary
+    data volume was still `Bound` and the reinstalled StatefulSet re-bound the
+    same Longhorn volume by name.
+  - `karakeep` and `karakeep-meilesearch` Secrets — untouched **only because**
+    `18-lab-memory/values.yaml` had disabled the chart's Secret objects. Had
+    they been chart-managed, the uninstall would have deleted both credentials.
+  - The `karakeep-meilesearch` PVC did NOT survive: a plain subchart PVC is
+    Helm-owned, so it was deleted. Meilisearch is a rebuildable index, so this
+    cost a reindex rather than data.
+
+  **Safe rollback for a bundle that reached ownership:** do not touch
+  `spec.paths`. Either leave it and fix forward, or `spec.paused: true` to stop
+  Fleet acting while you work. If the path must go, `helm uninstall` is what you
+  are actually authorising — take a backup first.
+
+- **`kubectl diff` clean does NOT mean Fleet will apply cleanly.** This is the
+  pre-flight gap that caused the incident above. Fleet applies server-side, so
+  it needs *field ownership*, not just matching values. karakeep failed with:
+
+      Apply failed with 6 conflicts: conflicts with "helm":
+      - .spec.template.spec.hostIPC
+      - .spec.volumeClaimTemplates
+      - .spec.template.spec.containers[name="karakeep"].resources.limits.cpu
+
+  The values were semantically identical — live had `cpu: 1` where the chart
+  renders `1000m`, and live simply omitted `hostIPC/hostNetwork/hostPID` where
+  the chart renders explicit `false`. `kubectl diff` normalises all of that and
+  reports clean. Server-side apply does not: it sees another manager (`helm`,
+  from the original client-side-apply install) owning those paths and refuses.
+
+  Neither escape is free. `helm.force: true` replaces objects, and
+  `.spec.volumeClaimTemplates` is immutable, so on a StatefulSet that risks a
+  delete/recreate of the data volume. Stripping the stale `helm` entry from
+  `managedFields` lets Fleet take over but then it *writes* its normalised
+  values, rolling the pod.
+
+  So: add an ownership pre-flight before adopting any Helm release that predates
+  Fleet. `kubectl apply --server-side --dry-run=server` against the render will
+  surface the conflicts that `kubectl diff` hides.
+
+- **A nested path with its own `fleet.yaml` deploys as soon as its PARENT path
+  is adopted — it is not a staging gate.** Fleet scans the parent path
+  recursively; a nested `fleet.yaml` splits that subdirectory into its own
+  *bundle*, but it is still rendered and applied under the parent's path entry.
+  Observed three times on 2026-07-30: adopting `09-mcp` immediately deployed
+  `09-mcp/ollama-code`, `17-buzz` brought `17-buzz/minio`, and `18-lab-memory`
+  brought `18-lab-memory/raw` — none of which were in `spec.paths`.
+
+  Consequence: the "apply the first path, then patch in the second" staging
+  pattern **does not work for nested paths**. It only works for siblings, the way
+  `01-networking` and `01-networking/pools` are siblings. If a second path must
+  be genuinely gated, make it a sibling directory, not a child.
+
+- **A field the API server silently discards makes a bundle permanently
+  `Modified`.** The buzz redis subchart sets
+  `updateStrategy.rollingUpdate.maxUnavailable: 1`, but this cluster has
+  `MaxUnavailableStatefulSet` disabled (`kubernetes_feature_enabled{...} 0`), so
+  the API server strips it on every apply. Fleet re-renders it, never sees it
+  land, and reports `Modified` forever with no path to convergence — which hides
+  real drift behind permanent noise. Fixed by nulling the value in
+  `17-buzz/values.yaml`. Confirm suspicions with
+  `kubectl patch --dry-run=server` and check whether the field comes back.
+
 - **cert-manager's DNS-01 flags exist only on the live object — omitting them
   is a delayed, cluster-wide certificate outage.** The live `cert-manager`
   Deployment carries two args the chart does not render:
@@ -386,10 +464,58 @@ itself — deleting the Cluster object here does not touch it.
 
 ## Adoption log
 
-`2026-07-30` — **Six new namespaces brought into the repo. BUILT AND
-PRE-FLIGHTED, NOT YET ADOPTED.** Nothing below is live: Fleet tracks `main`, and
-this work is on a branch. No GitRepo has been applied and no cluster object was
-modified. Every claim here is from a `kubectl diff` / `helm template` dry run.
+`2026-07-30` — **ADOPTION RESULTS. 5 of 7 new GitRepos adopted; karakeep failed
+and was destroyed and restored; cert-manager deliberately held.**
+
+Live state after this session — every BundleDeployment `ready=true`:
+
+| GitRepo | Paths live | Result |
+|---|---|---|
+| `lab-nemoclaw` | `19-nemoclaw` | ✅ `nonModified=true` first sync. Zero restarts, as predicted |
+| `lab-ash4d-origin` | `16-ash4d-origin` | ✅ pod UID + startTime unchanged — true no-op |
+| `lab-openshell` | `20-openshell` | ✅ pod unchanged; adopted existing release (rev 3 → 4) |
+| `lab-buzz` | `17-buzz` + nested `/minio` | ✅ all 4 pods unchanged; release 7 → 11. Reported `Modified` until the redis `maxUnavailable` fix |
+| `lab-lab-memory` | `18-lab-memory/raw` **only** | ⚠️ raw OK. **karakeep NOT adopted** — see below |
+| `lab-ai` | + `09-mcp/ollama-code` | ✅ migration done, `ollama-code` namespace deleted |
+| `lab-cert-manager` | — | ⏸ **not applied.** Held deliberately |
+
+**The karakeep incident, in order.** Adopting `18-lab-memory` failed on
+server-side-apply field-manager conflicts (see Watch-outs) — `kubectl diff` had
+been clean, which is exactly the gap. Fleet retry-looped the release from rev 2
+to rev 18, all `failed`, while the workload stayed healthy and untouched. To stop
+the loop, `spec.paths` was narrowed to `18-lab-memory/raw`. **That uninstalled
+the release**, deleting karakeep's two StatefulSets, its chrome Deployment,
+Service, Ingress, and the `karakeep-meilesearch` PVC.
+
+Restored with `helm upgrade --install karakeep karakeep-app/karakeep --version
+0.32.0 -n lab-memory -f 18-lab-memory/values.yaml`. Outcome:
+
+- **Primary data intact.** `data-karakeep-0` is a `volumeClaimTemplates` PVC,
+  which Kubernetes does not garbage-collect, so it stayed `Bound` and the new
+  StatefulSet re-bound the same Longhorn volume
+  (`pvc-0acd3510-43ff-438c-8a54-c9fa8f310298`, 18d old).
+- **Credentials intact** — and only because this repo had already disabled the
+  chart's Secret objects. Chart-managed Secrets would have been deleted.
+- **Meilisearch index lost.** Its PVC was a plain Helm-owned PVC. A fresh 1Gi
+  volume was created; karakeep needs a reindex to restore search. Bookmarks
+  themselves are in the primary volume and were never at risk.
+- Verified after restore: 3/3 pods Running, `/api/health` 200,
+  `karakeep-ash4d-tls` still valid to 2026-10-09.
+
+karakeep is now running **unmanaged again**, exactly as before this session.
+Re-adopting it requires resolving the field-ownership conflict first — see the
+`kubectl diff` watch-out for why neither `helm.force` nor `managedFields` surgery
+is free on a StatefulSet with an immutable `volumeClaimTemplates`.
+
+**Why cert-manager was held.** It was next in line and is fully built and
+pre-flighted, but it owns the six cert-manager CRDs and is a pre-existing Helm
+release — the same profile as karakeep. Having just demonstrated that (a) SSA
+conflicts are not visible to `kubectl diff` and (b) backing a path out uninstalls
+the release, adopting it would have risked deleting every `Certificate`,
+`Issuer` and `Order` in the cluster. Do the server-side dry-run pre-flight first.
+
+Everything below this line was written before adoption and describes the
+pre-flight, which remains accurate.
 
 | Path | Source project | Pre-flight result |
 |---|---|---|

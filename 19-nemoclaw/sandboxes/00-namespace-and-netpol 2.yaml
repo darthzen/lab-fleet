@@ -1,0 +1,63 @@
+# Dedicated namespace for the PRIVILEGED OpenShell supervisor/sandbox pods.
+# PSA 'privileged' because the supervisor legitimately needs root + SYS_ADMIN/
+# NET_ADMIN/SYS_PTRACE to build the agent's Landlock/seccomp/netns sandbox from
+# inside the pod. Isolation of this privileged pod comes from the egress
+# NetworkPolicies below + least-priv RBAC + (windowed) node SELinux + a
+# kata/gVisor runtimeClass. The control-plane ns 'nemoclaw' stays 'restricted'.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nemoclaw-sandboxes
+  labels:
+    app.kubernetes.io/part-of: nemoclaw-ops-agent
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/warn: baseline
+    pod-security.kubernetes.io/audit: baseline
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: default-deny-all, namespace: nemoclaw-sandboxes, labels: { app.kubernetes.io/part-of: nemoclaw-ops-agent } }
+spec: { podSelector: {}, policyTypes: ["Ingress","Egress"] }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: egress-dns, namespace: nemoclaw-sandboxes, labels: { app.kubernetes.io/part-of: nemoclaw-ops-agent } }
+spec:
+  podSelector: {}
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports: [ { port: 53, protocol: UDP }, { port: 53, protocol: TCP } ]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: egress-mcpo-ollama, namespace: nemoclaw-sandboxes, labels: { app.kubernetes.io/part-of: nemoclaw-ops-agent } }
+spec:
+  podSelector: {}
+  policyTypes: ["Egress"]
+  egress:
+    - to: [ { namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ai } } } ]
+      ports: [ { port: 8000, protocol: TCP }, { port: 11434, protocol: TCP } ]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: egress-openshell-gateway, namespace: nemoclaw-sandboxes, labels: { app.kubernetes.io/part-of: nemoclaw-ops-agent } }
+spec:
+  podSelector: {}
+  policyTypes: ["Egress"]
+  egress:
+    - to: [ { namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: openshell } } } ]
+      ports: [ { port: 8080, protocol: TCP } ]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: egress-slack-https, namespace: nemoclaw-sandboxes, labels: { app.kubernetes.io/part-of: nemoclaw-ops-agent } }
+spec:
+  podSelector: {}
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - ipBlock: { cidr: 0.0.0.0/0, except: ["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","169.254.0.0/16"] }
+      ports: [ { port: 443, protocol: TCP } ]

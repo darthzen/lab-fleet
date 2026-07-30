@@ -1,0 +1,16 @@
+# Default-deny both directions for every pod in nemoclaw.
+# This is the OpenShell egress-lock translated to a k8s primitive: nothing
+# leaves (or enters) unless a later policy explicitly allows it. Combined with
+# the 'restricted' PSA label on the namespace, this is the platform half of the
+# sandbox port (see docs/openshell-k8s.md).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: nemoclaw
+  labels:
+    app.kubernetes.io/part-of: nemoclaw-ops-agent
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]
+  # no ingress/egress rules => deny all in both directions

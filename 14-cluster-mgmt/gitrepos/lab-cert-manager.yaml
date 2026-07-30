@@ -24,14 +24,20 @@
 #
 # PREREQUISITE SECRET: cloudflare-api-token in the cert-manager namespace.
 #
-# STAGED: this file carries ONLY `15-cert-manager`, so applying it is a single
-# adoption step and stays idempotent. `15-cert-manager/issuer` is deliberately left
-# out — see gitrepos/README.md on why a GitRepo file must never hold more
-# than one unadopted path. Add the second path after the first is verified
-# Ready:
+# NOT STAGED — and it cannot be. `15-cert-manager/issuer` is a CHILD of
+# `15-cert-manager`, and Fleet deploys a nested path as soon as its parent is
+# adopted: the nested fleet.yaml splits it into its own bundle, but that
+# bundle is still rendered under the parent's path entry. Applying this
+# file therefore brings BOTH paths up at once. Verified 2026-07-30.
 #
-#   kubectl --context rancher -n fleet-default patch gitrepo lab-cert-manager \
-#     --type=merge -p '{"spec":{"paths":["15-cert-manager","15-cert-manager/issuer"]}}'
+# Do not try to gate the child by leaving it out of spec.paths; it has no
+# effect. Gating only works for SIBLING paths (cf. 01-networking and
+# 01-networking/pools). See FLEET-WIRING.md.
+#
+# 🔴 And do NOT roll back by removing a path once adoption has succeeded:
+#    for a bundle whose Helm release Fleet owns, that UNINSTALLS the
+#    release. Use spec.paused instead. This deleted karakeep on
+#    2026-07-30 -- see FLEET-WIRING.md.
 apiVersion: fleet.cattle.io/v1alpha1
 kind: GitRepo
 metadata:

@@ -12,6 +12,30 @@ Applying any file here is a **single** adoption step, and idempotent once adopte
 no file holds more than one unadopted path (see the rule below). The exception is
 `lab-ai`, which has **no file at all** and is staged by hand — see below.
 
+> **🔴 Two corrections learned by breaking things on 2026-07-30. Read these
+> before adopting anything.**
+>
+> **1. Removing a path does NOT roll back — it uninstalls.** For a bundle whose
+> Helm release Fleet has taken ownership of, deleting the path runs the
+> equivalent of `helm uninstall`. This deleted karakeep's StatefulSets,
+> Deployment, Service, Ingress and one PVC. Use `spec.paused: true` to stop Fleet
+> acting, and fix forward. Only `spec.paths` removal on a bundle that never
+> reached ownership is safe.
+>
+> **2. A nested path is not a staging gate.** Fleet deploys `<path>/<child>` as
+> soon as `<path>` is adopted, whether or not the child is in `spec.paths`.
+> Gating only works between SIBLING paths (`01-networking` and
+> `01-networking/pools`). The "then patch in the second path" note that used to
+> appear on `lab-buzz`, `lab-lab-memory` and `lab-cert-manager` was wrong and has
+> been corrected.
+>
+> **3. `kubectl diff` clean does not predict Fleet.** Fleet applies server-side
+> and needs field *ownership*. Pre-flight any pre-existing Helm release with
+> `kubectl apply --server-side --dry-run=server`, which surfaces the
+> field-manager conflicts `kubectl diff` normalises away.
+>
+> Details and evidence for all three are in `FLEET-WIRING.md`.
+
 ## Convention: `lab-<namespace>`
 
 One GitRepo per Kubernetes namespace, so each namespace's workloads can be
@@ -27,12 +51,12 @@ adopted, rolled back, or paused independently of every other.
 | `lab-hermes` | `hermes` | `10-hermes` | low–med — needs `hermes-webui` Secret |
 | `lab-ai` | `ai` | 9 paths (04→09) | med — **no `.yaml` file, staged by hand — see below** |
 | `lab-openshell` | `openshell` | `20-openshell` | med — **after `lab-nemoclaw`**; vendored chart |
-| `lab-buzz` | `buzz` | `17-buzz` — then patch in `17-buzz/minio` | med — stateful; needs `buzz-relay` Secret |
-| `lab-lab-memory` | `lab-memory` | `18-lab-memory` — then patch in `18-lab-memory/raw` | med — **rolls one pod**; needs 2 Secrets |
+| `lab-buzz` | `buzz` | `17-buzz` (+ nested `17-buzz/minio`, comes automatically) | med — stateful; needs `buzz-relay` Secret |
+| `lab-lab-memory` | `lab-memory` | `18-lab-memory/raw` only — **karakeep is NOT adopted**, see below | blocked on SSA field conflicts |
 | `lab-metallb-system` | `metallb-system` | `01-networking` — then patch in `01-networking/pools` | med–high |
 | `lab-nvidia-device-plugin` | `nvidia-device-plugin` | `03-gpu` — `03-gpu/runtimeclass` is **on hold, k3s owns it** | med–high |
 | `lab-cattle-monitoring-system` | `cattle-monitoring-system` | `03-gpu/dcgm-exporter` | med |
-| `lab-cert-manager` | `cert-manager` | `15-cert-manager` — then patch in `15-cert-manager/issuer` | **highest of the app tranche — owns the CRDs** |
+| `lab-cert-manager` | `cert-manager` | `15-cert-manager` (+ nested `/issuer`) | **NOT ADOPTED — deliberately held, see below** |
 | `lab-longhorn-system` | `longhorn-system` | `02-longhorn` | **highest — adopt last** |
 
 Adopt in that order. Within `lab-ai`, add paths one at a time — raw manifests
