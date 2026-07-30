@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "d008c599ee16",
+  "strategy": "manual-commit",
+  "branch": "shrink-unsloth-pvc",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "21-unsloth-studio/README.md",
+    "21-unsloth-studio/unsloth-studio.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d0/08c599ee16/0/metadata.json",
+      "transcript": "/d0/08c599ee16/0/full.jsonl",
+      "compact_transcript": "/d0/08c599ee16/0/transcript.jsonl",
+      "content_hash": "/d0/08c599ee16/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 40,
+    "cache_creation_tokens": 28905,
+    "cache_read_tokens": 3400943,
+    "output_tokens": 18324,
+    "api_call_count": 22
+  }
+}
