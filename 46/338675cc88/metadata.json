@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "46338675cc88",
+  "strategy": "manual-commit",
+  "branch": "fleet-adopt-corrections",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "14-cluster-mgmt/FLEET-WIRING.md",
+    "14-cluster-mgmt/gitrepos/README.md",
+    "17-buzz/values.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/46/338675cc88/0/metadata.json",
+      "transcript": "/46/338675cc88/0/full.jsonl",
+      "compact_transcript": "/46/338675cc88/0/transcript.jsonl",
+      "content_hash": "/46/338675cc88/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 93,
+    "cache_creation_tokens": 67554,
+    "cache_read_tokens": 13996611,
+    "output_tokens": 47484,
+    "api_call_count": 49
+  }
+}
