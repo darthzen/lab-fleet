@@ -26,11 +26,11 @@ in-cluster Harbor like ollama-exporter, so it needs the `harbor-pull`
 imagePullSecret (created out-of-band, not in this repo):
 
     cd ~/Library/Mobile\ Documents/com~apple~CloudDocs/Developer/fossa-mcp
-    docker build -t registry.ash4d.com/ash4d-lab/fossa-mcp:0.1.0 .
-    docker push registry.ash4d.com/ash4d-lab/fossa-mcp:0.1.0
+    docker build -t registry.ash4d.com/ash4d-lab/fossa-mcp:0.1.1 .
+    docker push registry.ash4d.com/ash4d-lab/fossa-mcp:0.1.1
     kubectl -n ai rollout restart deploy/fossa-mcp
 
-0.1.0 was built without a local Docker, using a throwaway rootless BuildKit pod
+0.1.1 was built without a local Docker, using a throwaway rootless BuildKit pod
 in `ai` that pushed straight to Harbor — `kubectl cp` the build context into
 `/workspace/src`, then `buildctl build --output type=image,...,push=true`. Useful
 if you ever need to rebuild from a machine with no container runtime.
@@ -42,6 +42,29 @@ no ingress, no LoadBalancer — and if it ever needs to leave the namespace, put
 authenticating proxy in front of it. It binds `0.0.0.0` in-pod only because
 127.0.0.1 would be unreachable through the Service; see the project's
 DECISIONS.md §2.
+
+Reached two ways: in-cluster clients use the ClusterIP name, and Claude Code /
+Cowork sessions on the LAN use the Ingress at `https://fossa-mcp.ash4d.com/mcp`
+(public Cloudflare record → private Traefik address, so it resolves anywhere but
+only connects from inside the network):
+
+    claude mcp add --transport http --scope user fossa https://fossa-mcp.ash4d.com/mcp
+
+**DNS-01 gotcha, worth knowing for every cert in this lab:** the LAN intercepts
+outbound port 53 — a pod querying `1.1.1.1` directly still gets the lab
+resolver's answer. When cert-manager presents an `_acme-challenge` TXT record and
+self-checks immediately, a miss gets negative-cached against the `ash4d.com` SOA
+minimum (1800s), so issuance stalls for up to 30 minutes with
+`DNS record ... not yet propagated` even though the record is live publicly.
+Confirm with DoH, which cannot be intercepted:
+
+    curl -H 'accept: application/dns-json' \
+      "https://cloudflare-dns.com/dns-query?name=_acme-challenge.<host>.ash4d.com&type=TXT"
+
+If it returns `Status: 0` the record is fine and cert-manager just needs the
+negative cache to expire. The durable fix is to stop hijacking port 53 for the
+cluster's egress, or to forward `_acme-challenge.*.ash4d.com` upstream instead of
+answering it locally.
 
 To surface it in Open WebUI, add it to the `mcpo-config` ConfigMap in `mcpo.yaml`
 alongside the others and bump `config-revision`:

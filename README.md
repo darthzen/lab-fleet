@@ -95,7 +95,7 @@ flowchart TD
 | 14 | Cluster mgmt plane (Rancher downstream + Fleet) | README only | v2.14.3 |
 | 15 | cert-manager + `letsencrypt-dns` ClusterIssuer | jetstack/cert-manager | v1.20.2 |
 | 16 | ash4d.com origin (nginx placeholder) | raw manifests | nginx-unprivileged:alpine |
-| 17 | Buzz relay (+ standalone MinIO) | **vendored** chart `buzz` | 0.1.6 (app 0.1.0) |
+| 17 | Buzz relay (+ standalone MinIO) | oci://ghcr.io/block/buzz/charts/buzz | 0.1.6 (app 0.1.0) |
 | 18 | lab-memory — Karakeep + 3 MCP servers + ingest | karakeep-app/karakeep | chart 0.32.0 |
 | 19 | NemoClaw ops-agent scaffolding (RBAC/netpol) | raw manifests | — |
 | 20 | OpenShell agent gateway | **vendored** chart `helm-chart` | 0.0.0-dev |
@@ -115,12 +115,15 @@ Real dependency order for the new components:
     15-cert-manager  →  16, 17, 18   (anything terminating TLS in-cluster)
     19-nemoclaw      →  20-openshell (openshell writes into nemoclaw-sandboxes)
 
-Two of these charts are **vendored** (committed under `<dir>/chart/`) rather than
-pulled from a repo, which is a departure from `04`/`05`/`06`. Neither is
-available to pin: `buzz-0.1.6` is published nowhere reachable, and OpenShell
-publishes only the mutable tag `0.0.0-dev`, which has already drifted from what
-is running. Both were recovered from their live Helm release Secrets. See
-`14-cluster-mgmt/FLEET-WIRING.md`.
+One chart, OpenShell (20), is **vendored** (committed under `20-openshell/chart/`)
+rather than pulled from a repo — a departure from `04`/`05`/`06`. The running
+release came from upstream's floating `0.0.0-dev` tag, and none of the published
+immutable semvers (`0.0.37`–`0.0.42`) reproduces it, so the copy recovered from
+the live Helm release Secret is the only artifact known to match the cluster.
+
+Buzz (17) was briefly vendored too, on a wrong conclusion that its chart was
+unpublished; it is now referenced upstream at an immutable `0.1.6`. See
+`14-cluster-mgmt/FLEET-WIRING.md` for both stories.
 
 Each directory contains a README with the exact install commands and the reasoning behind non-default values. Helm components follow one pattern:
 
