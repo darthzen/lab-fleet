@@ -1,2 +1,6 @@
 __pycache__/
 *.pyc
+
+# macOS / local tooling — never part of a Fleet bundle
+.DS_Store
+.claude/

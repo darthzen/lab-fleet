@@ -14,8 +14,11 @@ spec:
         spec:
           containers:
           - env:
+            # Embeddings go through ollama-exporter's pass-through proxy (9401),
+            # not ollama directly, so batch embed traffic is counted in the
+            # exporter's metrics. See 04-ollama/ollama-exporter/.
             - name: OLLAMA_URL
-              value: http://ollama.ai.svc.cluster.local:11434
+              value: http://ollama-exporter.ai.svc.cluster.local:9401
             - name: MILVUS_URI
               value: http://milvus.ai.svc.cluster.local:19530
             - name: EMBED_MODEL
@@ -28,8 +31,10 @@ spec:
               value: /work
             - name: STATE_DIR
               value: /state
-            image: k8s-docs-indexer:latest
-            imagePullPolicy: IfNotPresent
+            # Locally-built (see Dockerfile), imported straight into containerd
+            # on the node — never pushed to a registry, hence pullPolicy Never.
+            image: localhost/k8s-docs-indexer:v2
+            imagePullPolicy: Never
             name: indexer
             resources:
               limits:

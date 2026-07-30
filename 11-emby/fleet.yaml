@@ -2,3 +2,12 @@
 # s6-overlay image: starts as root, drops via UID/GID env — no pod-level
 # securityContext (that breaks s6). GTX 1070 transcode pinned by UUID.
 defaultNamespace: emby
+
+# Raw-manifest bundle, but Fleet still deploys it via Helm internally — so
+# adopting the objects that are already on the cluster needs takeOwnership.
+# Without it the first sync fails: the live objects carry no
+# meta.helm.sh/release-name annotation, and Helm refuses to touch resources it
+# does not believe it owns. With it, adoption is metadata-only (Helm labels on
+# the top-level objects), so no pod template changes and no restarts.
+helm:
+  takeOwnership: true

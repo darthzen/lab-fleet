@@ -1,1 +1,27 @@
-# Installed with chart defaults — no user-supplied values.
+# Installed from chart defaults originally, so `helm get values` is still empty —
+# but the running cluster does NOT match chart defaults. The replica count below
+# was changed out-of-band and is declared here so Fleet adopts the release
+# instead of reverting it.
+#
+# This is a single-node cluster. The chart default of 3 replicas cannot be
+# satisfied by one node, so every new volume would sit permanently Degraded and
+# replica scheduling would fail once it ran out of distinct nodes. Do not raise
+# this without adding nodes.
+#
+# Verified 2026-07-29: with this value, `helm template` renders the
+# longhorn-storageclass ConfigMap exactly as it exists on the cluster.
+persistence:
+  # numberOfReplicas in the default `longhorn` StorageClass (chart default: 3).
+  # This is the one that governs every new PVC.
+  defaultClassReplicaCount: 1
+
+# NOT set here on purpose: defaultSettings.defaultReplicaCount.
+#
+# Longhorn's *global* default-replica-count is already 1 on the cluster
+# (`kubectl -n longhorn-system get settings.longhorn.io default-replica-count`
+# reads {"v1":"1","v2":"1"}), but it was set through the UI/CLI, so it lives only
+# in that Setting CRD — the live longhorn-default-setting ConfigMap does not
+# carry the key at all. Adding it here would make Fleet write a key the cluster
+# does not currently have, and longhorn-manager leaves the existing CRD value
+# alone when the key is absent. Left undeclared to keep this bundle an exact
+# match for live; revisit if the Setting CRD ever resets to 3.

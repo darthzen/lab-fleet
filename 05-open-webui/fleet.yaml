@@ -1,6 +1,12 @@
 # Fleet bundle — Open WebUI (Helm). See fleet-wiring-plan Phase 1.
-# StatefulSet-backed chat UI. WEBUI_SECRET_KEY must exist as a k8s Secret before
-# this path is enabled, or stored tool credentials break on restart.
+# StatefulSet-backed chat UI. No Secret prerequisite — the earlier note here
+# claimed WEBUI_SECRET_KEY was required, but the live StatefulSet references no
+# Secret at all and none exists in the ai namespace.
+#
+# values.yaml points both Ollama URLs at ollama-exporter:9401 (the pass-through
+# proxy), matching the live object. The release itself still declared
+# ollama:11434 — drift that `helm get values` could not show. Diff
+# `helm get manifest` against the cluster before adopting.
 defaultNamespace: ai
 helm:
   releaseName: open-webui

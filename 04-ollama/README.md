@@ -65,6 +65,23 @@ process, which ignored SIGTERM and took the V100 off the bus ("GPU is lost",
 `helm list` looks empty for sdf1 releases unless you pass `--kube-context default`
 — the Mac defaults to the `rancher` context (khyron).
 
+## ollama-exporter
+
+`ollama-exporter/` is a **separate Fleet bundle** (Fleet allows one chart per
+path, and this dir is a Helm bundle — same split as `06-milvus/attu`). It does
+two things:
+
+- **9400** — Prometheus metrics, polling Ollama every 15s for loaded-model and
+  VRAM state.
+- **9401** — a transparent reverse proxy to `ollama:11434`. Clients pointed here
+  instead of at Ollama directly get their requests counted. The docs-rag MCP
+  server (`09-mcp/docs-rag/`) and all three doc indexers (`08-indexer/`) are
+  wired through 9401 for exactly this reason.
+
+The image lives in the in-cluster Harbor (`registry.ash4d.com`), so the
+`harbor-pull` imagePullSecret must exist in the `ai` namespace or the bundle
+sticks on `ImagePullBackOff`. That Secret is not in this repo.
+
 ## Fleet
 
 `fleet.yaml` sets `takeOwnership: true` and Fleet watches this bundle. If Fleet

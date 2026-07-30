@@ -1,0 +1,626 @@
+# SUSE / openSUSE docs -> Milvus, weekly. Companion to k8s-docs-indexer:
+# reuses the same locally-built image, but runs a different entrypoint script
+# mounted from a ConfigMap (see the bottom of this file) rather than the one
+# baked into the image. DocBook XML + AsciiDoc sources, so the work volume is
+# larger (8Gi) and the deadline longer (4h) than the k8s corpus.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  labels:
+    app: suse-docs-indexer
+  name: suse-docs-indexer
+  namespace: ai
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 14400
+      backoffLimit: 2
+      template:
+        spec:
+          containers:
+          - command:
+            - python3
+            - /scripts/index_suse_docs.py
+            env:
+            # Embeddings via ollama-exporter's pass-through proxy (9401) so the
+            # batch load shows up in exporter metrics. See 04-ollama/ollama-exporter/.
+            - name: OLLAMA_URL
+              value: http://ollama-exporter.ai.svc.cluster.local:9401
+            - name: MILVUS_URI
+              value: http://milvus.ai.svc.cluster.local:19530
+            - name: EMBED_MODEL
+              value: nomic-embed-text
+            - name: EMBED_DIM
+              value: '768'
+            - name: COLLECTION
+              value: suse_docs
+            - name: OS_PROFILE
+              value: sles
+            - name: WORKDIR
+              value: /work
+            - name: STATE_DIR
+              value: /state
+            # Same locally-built image as k8s-docs-indexer (shared deps), driven
+            # by the mounted script instead of the built-in one.
+            image: localhost/k8s-docs-indexer:v2
+            imagePullPolicy: Never
+            name: indexer
+            resources:
+              limits:
+                cpu: '2'
+                memory: 4Gi
+              requests:
+                cpu: 500m
+                memory: 1Gi
+            volumeMounts:
+            - mountPath: /scripts
+              name: scripts
+            - mountPath: /state
+              name: state
+            - mountPath: /work
+              name: work
+          restartPolicy: Never
+          volumes:
+          - configMap:
+              name: suse-docs-indexer-script
+            name: scripts
+          - name: state
+            persistentVolumeClaim:
+              claimName: suse-docs-indexer-state
+          - emptyDir:
+              sizeLimit: 8Gi
+            name: work
+  schedule: 0 4 * * 0
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+---
+# Content-hash manifest for incremental re-embedding — small, but must survive
+# between weekly runs or every file gets re-embedded.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: suse-docs-indexer-state
+  namespace: ai
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: longhorn
+---
+# The indexer entrypoint. Kept as a ConfigMap (not baked into the image) so the
+# script can be iterated without a rebuild+import cycle on the node.
+apiVersion: v1
+data:
+  index_suse_docs.py: |
+    #!/usr/bin/env python3
+    """
+    index_suse_docs.py
+
+    Index the SUSE / openSUSE documentation corpus into Milvus, incrementally.
+
+    Companion to index_k8s_docs.py. Same contract:
+      - deterministic chunk IDs (sha1 of "repo/path#idx") -> re-runs upsert, never duplicate
+      - per-file content hash manifest on a PVC -> only changed files are re-embedded
+      - deletion handling -> upstream-removed files have their chunks deleted from Milvus
+
+    What is different: SUSE docs are NOT markdown.
+      - DocBook XML  (.xml)  -> doc-sle, doc-modular, doc-sleha, doc-slesforsap,
+                                doc-slert, doc-hpc, doc-public-cloud, doc-unversioned
+      - AsciiDoc     (.adoc) -> doc-suse-ai, bci-docs, technical-reference-documentation
+
+    Both are normalised to a markdown-ish intermediate (headings as '#'), because the
+    chunker splits on heading boundaries.
+
+    NOTE on DocBook: these files use DOCTYPE-declared entities (&productname; etc.) and
+    XInclude. A strict XML parser rejects them (undefined entities). Rather than pull in
+    lxml, we resolve entities from the repo's own *.ent files and then strip tags. This is
+    a heuristic text extraction, not a DocBook renderer -- adequate for RAG, and it never
+    fails a whole file over a malformed tag.
+
+    openSUSE note: doc.opensuse.org has no separate corpus. Per openSUSE/doc-o-o's README,
+    its content is built from SUSE/doc-sle plus openSUSE/release-notes-openSUSE. Both are
+    in REPOS below, so "openSUSE docs" are covered.
+
+    Embeddings: Ollama 'nomic-embed-text' (768-dim) -- MUST match the rest of the RAG stack.
+    """
+
+    import hashlib
+    import html
+    import json
+    import os
+    import re
+    import shutil
+    import subprocess
+    import time
+    from pathlib import Path
+
+    import requests
+    from pymilvus import MilvusClient, DataType
+
+    # ---------------------------------------------------------------------------
+    # Config (env-overridable)
+    # ---------------------------------------------------------------------------
+    OLLAMA_URL      = os.getenv("OLLAMA_URL", "http://ollama.ai.svc.cluster.local:11434")
+    MILVUS_URI      = os.getenv("MILVUS_URI", "http://milvus.ai.svc.cluster.local:19530")
+
+    EMBED_MODEL     = os.getenv("EMBED_MODEL", "nomic-embed-text")
+    EMBED_DIM       = int(os.getenv("EMBED_DIM", "768"))
+    COLLECTION      = os.getenv("COLLECTION", "suse_docs")
+
+    WORKDIR         = Path(os.getenv("WORKDIR", "/work"))
+    STATE_DIR       = Path(os.getenv("STATE_DIR", "/state"))
+    MANIFEST_PATH   = STATE_DIR / f"{COLLECTION}_manifest.json"
+
+    CHUNK_MAX_CHARS = int(os.getenv("CHUNK_MAX_CHARS", "1500"))
+    CHUNK_OVERLAP   = int(os.getenv("CHUNK_OVERLAP", "200"))
+    MIN_CHUNK_CHARS = int(os.getenv("MIN_CHUNK_CHARS", "80"))   # drop near-empty stubs
+    EMBED_RETRIES   = int(os.getenv("EMBED_RETRIES", "3"))
+
+    # Repos to index. Override wholesale with REPOS_JSON (same shape) if needed.
+    DEFAULT_REPOS = [
+        # name                       url                                                          branch
+        ("doc-sle",                  "https://github.com/SUSE/doc-sle.git",                       "main"),
+        ("doc-modular",              "https://github.com/SUSE/doc-modular.git",                   "main"),
+        ("doc-sleha",                "https://github.com/SUSE/doc-sleha.git",                     "main"),
+        ("doc-slesforsap",           "https://github.com/SUSE/doc-slesforsap.git",                "main"),
+        ("doc-slert",                "https://github.com/SUSE/doc-slert.git",                     "main"),
+        ("doc-hpc",                  "https://github.com/SUSE/doc-hpc.git",                       "main"),
+        ("doc-public-cloud",         "https://github.com/SUSE/doc-public-cloud.git",              "main"),
+        ("doc-unversioned",          "https://github.com/SUSE/doc-unversioned.git",               "main"),
+        ("doc-suse-ai",              "https://github.com/SUSE/doc-suse-ai.git",                   "main"),
+        ("bci-docs",                 "https://github.com/SUSE/bci-docs.git",                      "main"),
+        ("technical-reference-docs", "https://github.com/SUSE/technical-reference-documentation.git", "main"),
+        # NOT "main" -- this repo's default branch tracks the current Leap release.
+        ("release-notes-openSUSE",   "https://github.com/openSUSE/release-notes-openSUSE.git",    "Leap_15.6"),
+    ]
+
+    def load_repos() -> list[tuple[str, str, str]]:
+        raw = os.getenv("REPOS_JSON")
+        if raw:
+            return [(r["name"], r["url"], r.get("branch", "main")) for r in json.loads(raw)]
+        return DEFAULT_REPOS
+
+    # Paths never indexed: translations, CI, build tooling, styling.
+    EXCLUDE_PARTS = {"l10n", ".github", ".git", "xslt", "xsl", "build", "styles",
+                     "images", "archetypes", "layouts", "themes", "static"}
+    SOURCE_EXTS   = {".xml", ".adoc"}
+
+
+    def log(msg: str) -> None:
+        print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
+
+
+    # ---------------------------------------------------------------------------
+    # 1. Fetch
+    # ---------------------------------------------------------------------------
+    def clean_workdir() -> None:
+        WORKDIR.mkdir(parents=True, exist_ok=True)
+        for child in WORKDIR.iterdir():          # never rmtree the mount point itself
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child, ignore_errors=True)
+            else:
+                child.unlink(missing_ok=True)
+
+
+    def clone_repo(name: str, url: str, branch: str) -> Path:
+        dest = WORKDIR / name
+        shutil.rmtree(dest, ignore_errors=True)
+        log(f"Cloning {url} ({branch}, shallow)...")
+        subprocess.run(
+            ["git", "clone", "--depth", "1", "--branch", branch, url, str(dest)],
+            check=True, capture_output=True,
+        )
+        return dest
+
+
+    # ---------------------------------------------------------------------------
+    # 2. Extract -- DocBook XML
+    # ---------------------------------------------------------------------------
+    ENTITY_DECL_RE = re.compile(r'<!ENTITY\s+([\w.-]+)\s+"(.*?)"\s*>', re.DOTALL)
+    # DOCTYPE may carry an internal subset: <!DOCTYPE chapter [ ... ]>. A lazy ".*?>"
+    # stops at the first '>' INSIDE the subset and leaks "%entities; ]>" into the text.
+    DOCTYPE_RE     = re.compile(r"<!DOCTYPE[^\[>]*(?:\[.*?\])?\s*>", re.DOTALL)
+    CDATA_RE       = re.compile(r"<!\[CDATA\[(.*?)\]\]>", re.DOTALL)
+    COMMENT_RE     = re.compile(r"<!--.*?-->", re.DOTALL)
+    PI_RE          = re.compile(r"<\?.*?\?>", re.DOTALL)
+    TITLE_RE       = re.compile(r"<(title|subtitle)\b[^>]*>(.*?)</\1>", re.DOTALL | re.IGNORECASE)
+    REMARK_RE      = re.compile(r"<remark\b.*?</remark>", re.DOTALL | re.IGNORECASE)
+    # Editorial/build metadata: revision dates, translation flags, bug trackers. Indexing
+    # these injects noise like a bare "yes" or "2024-05" into otherwise clean prose.
+    NOISE_RE       = re.compile(
+        r"<(dm:docmanager|revhistory|revision|indexterm|productname|bibliography)\b.*?</\1>",
+        re.DOTALL | re.IGNORECASE,
+    )
+    TAG_RE         = re.compile(r"<[^>]+>", re.DOTALL)
+    ENTITY_REF_RE  = re.compile(r"&([\w.-]+);")
+    WS_RE          = re.compile(r"[ \t]*\n[ \t]*")
+    BLANKS_RE      = re.compile(r"\n{3,}")
+
+    XML_BUILTINS = {"amp": "&", "lt": "<", "gt": ">", "quot": '"', "apos": "'"}
+
+    # Entity values are often themselves DocBook, e.g.
+    #   <!ENTITY productname "<phrase os='sles'>SUSE Linux Enterprise Server</phrase>
+    #                         <phrase os='osuse'>openSUSE Leap</phrase>">
+    # Blindly stripping tags concatenates the variants ("openSUSE LeapSUSE Linux
+    # Enterprise..."). Pick one OS profile instead. doc-sle is shared between SLES and
+    # openSUSE Leap; default to the SLES wording, override with OS_PROFILE=osuse.
+    OS_PROFILE  = os.getenv("OS_PROFILE", "sles")
+    PHRASE_RE   = re.compile(r"<phrase\b[^>]*\bos=['\"]([^'\"]+)['\"][^>]*>(.*?)</phrase>",
+                             re.DOTALL | re.IGNORECASE)
+
+
+    def clean_entity_value(val: str) -> str:
+        phrases = PHRASE_RE.findall(val)
+        if phrases:
+            chosen = next(
+                (inner for os_attr, inner in phrases
+                 if OS_PROFILE in [x.strip() for x in re.split(r"[;,\s]+", os_attr)]),
+                phrases[0][1],
+            )
+            val = chosen
+        return html.unescape(TAG_RE.sub("", val)).strip()
+
+
+    def build_entity_map(repo_root: Path) -> dict[str, str]:
+        """SUSE DocBook uses &productname;-style entities declared in *.ent files.
+        Collect them so extracted text reads as prose, not as raw entity refs."""
+        ents: dict[str, str] = {}
+        for ent_file in repo_root.rglob("*.ent"):
+            try:
+                for name, val in ENTITY_DECL_RE.findall(ent_file.read_text(errors="ignore")):
+                    ents.setdefault(name, val)
+            except OSError:
+                continue
+        # Resolve entities that reference other entities (two passes covers SUSE's nesting).
+        for _ in range(2):
+            for k, v in list(ents.items()):
+                if "&" in v:
+                    ents[k] = ENTITY_REF_RE.sub(
+                        lambda m: ents.get(m.group(1), XML_BUILTINS.get(m.group(1), "")), v
+                    )
+        return {k: clean_entity_value(v) for k, v in ents.items()}
+
+
+    def resolve_entities(text: str, ents: dict[str, str]) -> str:
+        def sub(m: re.Match) -> str:
+            name = m.group(1)
+            if name in XML_BUILTINS:
+                return XML_BUILTINS[name]
+            # Unknown -> leave the original text alone. Deleting it would corrupt shell
+            # examples, where "echo err >&2; exit 1" looks exactly like an entity ref.
+            return ents.get(name, m.group(0))
+        return ENTITY_REF_RE.sub(sub, text)
+
+
+    def docbook_to_text(raw: str, ents: dict[str, str]) -> str:
+        t = DOCTYPE_RE.sub("", raw)
+        # CDATA wraps literal config/code samples. Keep the payload, drop the wrapper --
+        # otherwise the "]]>" closer ends up in the indexed text.
+        t = CDATA_RE.sub(lambda m: m.group(1), t)
+        t = COMMENT_RE.sub("", t)
+        t = PI_RE.sub("", t)
+        t = REMARK_RE.sub("", t)               # editorial remarks are not documentation
+        t = NOISE_RE.sub("", t)                # revhistory / docmanager metadata
+        # Titles become markdown headings so the chunker can split on them.
+        t = TITLE_RE.sub(lambda m: f"\n\n## {TAG_RE.sub('', m.group(2)).strip()}\n\n", t)
+        # Block-ish elements become paragraph breaks so text doesn't run together.
+        t = re.sub(r"</(para|listitem|step|screen|programlisting|entry|row|note|warning|tip|important)>",
+                   "\n\n", t, flags=re.IGNORECASE)
+        t = TAG_RE.sub("", t)
+        t = resolve_entities(t, ents)
+        t = html.unescape(t)
+        t = TAG_RE.sub("", t)     # entity values can expand to markup; strip once more
+        t = WS_RE.sub("\n", t)
+        return BLANKS_RE.sub("\n\n", t).strip()
+
+
+    # ---------------------------------------------------------------------------
+    # 2b. Extract -- AsciiDoc
+    # ---------------------------------------------------------------------------
+    ADOC_ATTR_RE    = re.compile(r"^:[\w!-]+:.*$", re.MULTILINE)          # :toc: / :sectnums:
+    # ifdef blocks hold ALTERNATE renderings (e.g. an override title). Keeping both the
+    # ifdef and ifndef branch indexes the same heading twice; drop the ifdef branch.
+    ADOC_IFDEF_BLK  = re.compile(r"^ifdef::[^\n]*\[\]\s*\n.*?^endif::[^\n]*$",
+                                 re.DOTALL | re.MULTILINE)
+    ADOC_COND_RE    = re.compile(r"^(ifdef|ifndef|ifeval|endif)::.*$", re.MULTILINE)
+    ADOC_INCLUDE_RE = re.compile(r"^include::.*$", re.MULTILINE)
+    ADOC_COMMENT_BL = re.compile(r"^////.*?^////", re.DOTALL | re.MULTILINE)
+    ADOC_COMMENT_LN = re.compile(r"^//(?!/).*$", re.MULTILINE)
+    ADOC_BLOCKID_RE = re.compile(r"^\[\[.*?\]\]$", re.MULTILINE)          # [[anchor]]
+    # [source,bash] / [#anchor-id] / [.procedure] / [NOTE]
+    ADOC_BLOCKAT_RE = re.compile(r"^\[[#.%a-zA-Z][^\]]*\]$", re.MULTILINE)
+    ADOC_IMAGE_RE   = re.compile(r"^(image|video|audio)::.*$", re.MULTILINE)
+    # Block delimiters: ==== ---- **** ____ ++++ .... and the CSV/table |=== fences.
+    ADOC_DELIM_RE   = re.compile(r"^([=\-*_+.]{4,}|\|===|,===)\s*$", re.MULTILINE)
+    # NOTE: '\s+' here would match the NEWLINE after a bare '====' delimiter and promote
+    # the following line to a heading. Restrict to spaces/tabs.
+    ADOC_HEADING_RE = re.compile(r"^(={1,6})[ \t]+(\S.*)$", re.MULTILINE)
+    ADOC_BLOCKTTL_RE= re.compile(r"^\.(\S.*)$", re.MULTILINE)              # .Block title
+    # Inline macros: menu:Set as default[], btn:[OK], xref:id[Text], link:url[Text].
+    # Keep the human-readable part; drop the target. Restricted to the known macro names --
+    # a generic "word:target[...]" pattern would eat prose like "Note: see [1]".
+    ADOC_MACRO_RE   = re.compile(
+        r"\b(?:xref|link|https?|ftp|mailto|image|icon|kbd|btn|menu|man|footnote|pass|url)"
+        r":([^\[\]\n]*)\[([^\]\n]*)\]"
+    )
+    ADOC_ATTRSUB_RE = re.compile(r"\{([\w-]+)\}")                          # {productname}
+    ADOC_ATTRDEF_RE = re.compile(r"^:([\w-]+):\s+(.*)$", re.MULTILINE)
+
+
+    def build_attr_map(repo_root: Path) -> dict[str, str]:
+        """AsciiDoc repos keep :productname:-style attributes in shared attribute files
+        that individual docs pull in via include::. Since we index files standalone, the
+        includes are gone -- collect the definitions repo-wide so {productname} resolves to
+        'SUSE AI' rather than leaking the literal placeholder name into the text."""
+        attrs: dict[str, str] = {}
+        for adoc in sorted(repo_root.rglob("*.adoc")):
+            try:
+                for name, val in ADOC_ATTRDEF_RE.findall(adoc.read_text(errors="ignore")):
+                    attrs.setdefault(name, val.strip())   # first definition wins
+            except OSError:
+                continue
+        return attrs
+
+
+    def asciidoc_to_text(raw: str, repo_attrs: dict[str, str] | None = None) -> str:
+        attrs = {**(repo_attrs or {}), **dict(ADOC_ATTRDEF_RE.findall(raw))}  # file overrides repo
+        t = ADOC_COMMENT_BL.sub("", raw)
+        t = ADOC_COMMENT_LN.sub("", t)
+        t = ADOC_INCLUDE_RE.sub("", t)
+        t = ADOC_IFDEF_BLK.sub("", t)                  # drop alternate-rendering branches
+        t = ADOC_COND_RE.sub("", t)                    # drop leftover ifndef/endif markers
+        t = ADOC_IMAGE_RE.sub("", t)
+        t = ADOC_BLOCKID_RE.sub("", t)
+        t = ADOC_BLOCKAT_RE.sub("", t)
+        t = ADOC_ATTR_RE.sub("", t)
+        # Headings BEFORE delimiter stripping (a heading line is not a delimiter), and
+        # delimiters before block titles (so '....' is not read as a title).
+        t = ADOC_HEADING_RE.sub(lambda m: f"\n{'#' * len(m.group(1))} {m.group(2).strip()}\n", t)
+        t = ADOC_DELIM_RE.sub("", t)
+        t = ADOC_BLOCKTTL_RE.sub(lambda m: m.group(1), t)
+        t = ADOC_MACRO_RE.sub(lambda m: m.group(2) or m.group(1) or "", t)
+        # SUSE's AsciiDoc embeds DocBook inline tags (<replaceable>, <command>) inside
+        # code samples. Keep the payload, drop the tag.
+        t = TAG_RE.sub("", t)
+        # Unresolved attribute -> leave it verbatim. Most are code placeholders such as
+        # {namespace} or AppArmor's @{HOME}; deleting them silently corrupts the example.
+        t = ADOC_ATTRSUB_RE.sub(lambda m: attrs.get(m.group(1), m.group(0)), t)
+        t = BLANKS_RE.sub("\n\n", t)
+        return t.strip()
+
+
+    def extract(fp: Path, ents: dict[str, str], attrs: dict[str, str]) -> str:
+        raw = fp.read_text(errors="ignore")
+        if fp.suffix.lower() == ".xml":
+            return docbook_to_text(raw, ents)
+        return asciidoc_to_text(raw, attrs)
+
+
+    # ---------------------------------------------------------------------------
+    # 3. Chunk (heading-aware, same policy as the k8s indexer)
+    # ---------------------------------------------------------------------------
+    HEADING_RE = re.compile(r"^#{1,6}\s", re.MULTILINE)
+
+
+    def chunk_text(text: str) -> list[str]:
+        parts, last = [], 0
+        for m in HEADING_RE.finditer(text):
+            if m.start() > last:
+                parts.append(text[last:m.start()].strip())
+                last = m.start()
+        parts.append(text[last:].strip())
+        sections = [p for p in parts if p]
+
+        chunks: list[str] = []
+        buf = ""
+        for sec in sections:
+            if len(sec) > CHUNK_MAX_CHARS:
+                if buf:
+                    chunks.append(buf); buf = ""
+                start = 0
+                while start < len(sec):
+                    end = start + CHUNK_MAX_CHARS
+                    chunks.append(sec[start:end])
+                    start = end - CHUNK_OVERLAP
+            elif len(buf) + len(sec) + 1 <= CHUNK_MAX_CHARS:
+                buf = f"{buf}\n{sec}".strip()
+            else:
+                if buf:
+                    chunks.append(buf)
+                buf = sec
+        if buf:
+            chunks.append(buf)
+        # Heading-only or boilerplate fragments carry no retrievable signal.
+        return [c for c in chunks if len(c.strip()) >= MIN_CHUNK_CHARS]
+
+
+    # ---------------------------------------------------------------------------
+    # 4. Identify / embed
+    # ---------------------------------------------------------------------------
+    def chunk_id(rel_path: str, idx: int) -> int:
+        h = hashlib.sha1(f"{rel_path}#{idx}".encode()).hexdigest()
+        return int(h[:16], 16) & 0x7FFFFFFFFFFFFFFF
+
+
+    def file_hash(text: str) -> str:
+        return hashlib.sha256(text.encode()).hexdigest()
+
+
+    def embed(text: str) -> list[float]:
+        last_err = None
+        for attempt in range(EMBED_RETRIES):
+            try:
+                r = requests.post(
+                    f"{OLLAMA_URL}/api/embeddings",
+                    json={"model": EMBED_MODEL, "prompt": text},
+                    timeout=120,
+                )
+                r.raise_for_status()
+                vec = r.json()["embedding"]
+                if len(vec) != EMBED_DIM:
+                    raise ValueError(f"Embedding dim {len(vec)} != expected {EMBED_DIM}.")
+                return vec
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+                time.sleep(2 * (attempt + 1))
+        raise RuntimeError(f"Embedding failed after {EMBED_RETRIES} tries: {last_err}")
+
+
+    # ---------------------------------------------------------------------------
+    # 5. Milvus
+    # ---------------------------------------------------------------------------
+    def ensure_collection(client: MilvusClient) -> None:
+        if client.has_collection(COLLECTION):
+            return
+        log(f"Creating collection '{COLLECTION}' (dim={EMBED_DIM})...")
+        schema = client.create_schema(auto_id=False, enable_dynamic_field=True)
+        schema.add_field("id", DataType.INT64, is_primary=True)
+        schema.add_field("vector", DataType.FLOAT_VECTOR, dim=EMBED_DIM)
+        schema.add_field("text", DataType.VARCHAR, max_length=65535)
+        schema.add_field("path", DataType.VARCHAR, max_length=1024)
+        schema.add_field("repo", DataType.VARCHAR, max_length=128)   # filterable per product
+        schema.add_field("chunk_index", DataType.INT64)
+
+        index_params = client.prepare_index_params()
+        index_params.add_index(
+            field_name="vector", index_type="HNSW", metric_type="COSINE",
+            params={"M": 16, "efConstruction": 200},
+        )
+        client.create_collection(collection_name=COLLECTION, schema=schema,
+                                 index_params=index_params)
+
+
+    def load_manifest() -> dict:
+        if MANIFEST_PATH.exists():
+            return json.loads(MANIFEST_PATH.read_text())
+        return {}
+
+
+    def save_manifest(manifest: dict) -> None:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = MANIFEST_PATH.with_suffix(".tmp")      # atomic: a killed job can't corrupt state
+        tmp.write_text(json.dumps(manifest, indent=2))
+        tmp.replace(MANIFEST_PATH)
+
+
+    def delete_ids(client: MilvusClient, ids: list[int]) -> None:
+        for i in range(0, len(ids), 500):            # keep the filter expression sane
+            batch = ids[i:i + 500]
+            client.delete(collection_name=COLLECTION, filter=f"id in {batch}")
+
+
+    # ---------------------------------------------------------------------------
+    # Main
+    # ---------------------------------------------------------------------------
+    def wanted(fp: Path, repo_root: Path) -> bool:
+        if fp.suffix.lower() not in SOURCE_EXTS:
+            return False
+        rel_parts = fp.relative_to(repo_root).parts
+        return not any(p in EXCLUDE_PARTS for p in rel_parts)
+
+
+    def main() -> None:
+        clean_workdir()
+        client = MilvusClient(uri=MILVUS_URI)
+        ensure_collection(client)
+
+        old_manifest = load_manifest()
+        new_manifest: dict = {}
+        done_repos: set[str] = set()          # only prune deletions for repos we processed
+        totals = {"changed": 0, "unchanged": 0, "failed_repos": []}
+
+        for name, url, branch in load_repos():
+            try:
+                repo_root = clone_repo(name, url, branch)
+            except subprocess.CalledProcessError as e:
+                # One unreachable repo must not nuke the other repos' index entries.
+                log(f"!! clone FAILED for {name}: {e.stderr.decode(errors='ignore')[:200]}")
+                totals["failed_repos"].append(name)
+                for k, v in old_manifest.items():          # preserve its existing entries
+                    if k.startswith(f"{name}/"):
+                        new_manifest[k] = v
+                continue
+
+            ents = build_entity_map(repo_root)
+            attrs = build_attr_map(repo_root)
+            files = sorted(f for f in repo_root.rglob("*") if f.is_file() and wanted(f, repo_root))
+            log(f"[{name}] {len(files)} source files "
+                f"({len(ents)} entities, {len(attrs)} attributes resolved)")
+
+            changed = unchanged = skipped = 0
+            for fp in files:
+                rel = f"{name}/{fp.relative_to(repo_root)}"
+                try:
+                    cleaned = extract(fp, ents, attrs)
+                except Exception as e:  # noqa: BLE001
+                    log(f"  !! extract failed {rel}: {e}")
+                    skipped += 1
+                    continue
+                if len(cleaned) < MIN_CHUNK_CHARS:      # stubs, entity-only files, empty shells
+                    skipped += 1
+                    continue
+
+                fhash = file_hash(cleaned)
+                prev = old_manifest.get(rel)
+                if prev and prev.get("hash") == fhash:
+                    new_manifest[rel] = prev
+                    unchanged += 1
+                    continue
+
+                chunks = chunk_text(cleaned)
+                rows, ids = [], []
+                for idx, ch in enumerate(chunks):
+                    cid = chunk_id(rel, idx)
+                    ids.append(cid)
+                    rows.append({
+                        "id": cid, "vector": embed(ch), "text": ch,
+                        "path": rel, "repo": name, "chunk_index": idx,
+                    })
+
+                if prev:                                 # file shrank -> drop orphan chunks
+                    stale = list(set(prev.get("ids", [])) - set(ids))
+                    if stale:
+                        delete_ids(client, stale)
+
+                if rows:
+                    for i in range(0, len(rows), 64):    # bounded upsert batches
+                        client.upsert(collection_name=COLLECTION, data=rows[i:i + 64])
+                new_manifest[rel] = {"hash": fhash, "ids": ids}
+                changed += 1
+                if changed % 25 == 0:
+                    log(f"  [{name}] {changed} indexed so far...")
+
+            done_repos.add(name)
+            totals["changed"] += changed
+            totals["unchanged"] += unchanged
+            log(f"[{name}] changed={changed} unchanged={unchanged} skipped={skipped}")
+            shutil.rmtree(repo_root, ignore_errors=True)   # bound emptyDir usage
+            save_manifest(new_manifest)                    # checkpoint per repo
+
+        # Deletion pass -- only for repos that cloned and processed cleanly this run.
+        removed = 0
+        for rel, entry in old_manifest.items():
+            repo = rel.split("/", 1)[0]
+            if repo in done_repos and rel not in new_manifest:
+                ids = entry.get("ids", [])
+                if ids:
+                    delete_ids(client, ids)
+                removed += 1
+                log(f"  removed {rel} ({len(ids)} chunks deleted)")
+
+        save_manifest(new_manifest)
+        log(f"Done. changed={totals['changed']} unchanged={totals['unchanged']} "
+            f"removed={removed} total_files={len(new_manifest)} "
+            f"failed_repos={totals['failed_repos'] or 'none'}")
+
+
+    if __name__ == "__main__":
+        main()
+kind: ConfigMap
+metadata:
+  name: suse-docs-indexer-script
+  namespace: ai

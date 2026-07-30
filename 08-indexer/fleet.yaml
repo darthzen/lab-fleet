@@ -1,4 +1,15 @@
-# Fleet bundle — k8s-docs-indexer (raw manifest). See fleet-wiring-plan Phase 1.
-# Locally-built image; the Dockerfile/source in this dir are build inputs, not
-# deployed by Fleet. Only k8s-docs-indexer.yaml is applied.
+# Fleet bundle — docs indexers (raw manifests). See fleet-wiring-plan Phase 1.
+# Three weekly CronJobs, one per corpus: k8s-docs-indexer, suse-docs-indexer,
+# logicpro-docs-indexer. The first two share a locally-built image; the
+# Dockerfile/source in this dir are build inputs, NOT deployed by Fleet.
+# The suse/logicpro entrypoints ship as ConfigMaps inside their own manifests.
 defaultNamespace: ai
+
+# Raw-manifest bundle, but Fleet still deploys it via Helm internally — so
+# adopting the objects that are already on the cluster needs takeOwnership.
+# Without it the first sync fails: the live objects carry no
+# meta.helm.sh/release-name annotation, and Helm refuses to touch resources it
+# does not believe it owns. With it, adoption is metadata-only (Helm labels on
+# the top-level objects), so no pod template changes and no restarts.
+helm:
+  takeOwnership: true

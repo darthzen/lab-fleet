@@ -8,11 +8,19 @@ extraEnvVars:
 - name: RAG_EMBEDDING_MODEL
   value: nomic-embed-text
 - name: RAG_OLLAMA_BASE_URL
-  value: http://ollama.ai.svc.cluster.local:11434
+  value: http://ollama-exporter.ai.svc.cluster.local:9401
 ollama:
   enabled: false
+# Both Ollama URLs point at ollama-exporter's pass-through proxy (9401), NOT at
+# ollama:11434 directly, so chat + RAG traffic is counted in the exporter's
+# metrics. See 04-ollama/ollama-exporter/.
+#
+# The live StatefulSet was edited out-of-band to 9401 while the Helm release
+# still declared 11434 — `helm get values` looked clean because the drift was in
+# the rendered object, not the values. Adopting this release with the old values
+# would have silently routed traffic back around the exporter.
 ollamaUrls:
-- http://ollama.ai.svc.cluster.local:11434
+- http://ollama-exporter.ai.svc.cluster.local:9401
 persistence:
   enabled: true
   size: 10Gi

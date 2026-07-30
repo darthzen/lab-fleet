@@ -1,0 +1,47 @@
+# NOT APPLIED — reference only. Renamed .yaml.txt so Fleet never bundles it,
+# same trick as 09-mcp/github-mcp-token.secret.example.yaml.txt.
+#
+# Added to the repo in 77eed5e ("persist deps across pod upgrades") but never
+# applied to the cluster: as of 2026-07-29 there is no comfyui-user-script
+# ConfigMap in the ai namespace and the live Deployment mounts no user script.
+# It is parked here so wiring Fleet cannot push an untested change into a GPU
+# workload — if this is still wanted, apply and verify it by hand first, then
+# fold the ConfigMap plus its volume/volumeMount back into comfyui.yaml.
+#
+# Startup hook run by comfyui-nvidia-docker's init on every container start
+# (after venv/ComfyUI setup, before the server launches). Keeps pip deps
+# self-healing across image upgrades and venv rebuilds.
+#
+# Mount it back with:
+#   volumes:
+#   - name: user-script
+#     configMap:
+#       defaultMode: 0o755
+#       name: comfyui-user-script
+#   volumeMounts:
+#   - mountPath: /comfy/mnt/user_script.bash
+#     name: user-script
+#     subPath: user_script.bash
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app: comfyui
+  name: comfyui-user-script
+  namespace: ai
+data:
+  user_script.bash: |
+    #!/bin/bash
+    set -e
+    PIP=/comfy/mnt/venv/bin/pip
+
+    # 1. Self-heal: ensure every custom node's python deps are present
+    #    (no-op when satisfied; rebuilds them after a fresh venv).
+    for req in /basedir/custom_nodes/*/requirements.txt; do
+      [ -f "$req" ] && $PIP install --no-cache-dir -r "$req"
+    done
+
+    # 2. Version pins LAST so they win over whatever the steps above pulled.
+    #    torch 2.6 (cu124) breaks with transformers >= 4.54
+    #    (torch.float8_e8m0fnu). Revisit when the image moves to torch >= 2.7.
+    $PIP install --no-cache-dir "transformers==4.51.3"

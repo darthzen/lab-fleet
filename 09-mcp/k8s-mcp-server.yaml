@@ -1,3 +1,72 @@
+# Read-only cluster access for the MCP server. The `--read-only` flag on the
+# container is a courtesy; this RBAC is what actually enforces it, so keep the
+# verbs to get/list/watch. Cluster-scoped binding — the server is expected to
+# answer questions about the whole cluster, not just the ai namespace.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k8s-mcp-server-sa
+  namespace: ai
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: k8s-mcp-server-readonly
+rules:
+- apiGroups:
+  - ''
+  resources:
+  - '*'
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - '*'
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - '*'
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - '*'
+  verbs:
+  - get
+  - list
+  - watch
+# metrics.k8s.io has no watchable resources — get/list only, matching live.
+- apiGroups:
+  - metrics.k8s.io
+  resources:
+  - '*'
+  verbs:
+  - get
+  - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k8s-mcp-server-readonly-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: k8s-mcp-server-readonly
+subjects:
+- kind: ServiceAccount
+  name: k8s-mcp-server-sa
+  namespace: ai
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:

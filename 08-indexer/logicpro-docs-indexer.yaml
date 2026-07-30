@@ -1,0 +1,112 @@
+# Logic Pro docs -> Milvus, weekly. Unlike the k8s/SUSE indexers this one does
+# NOT use the locally-built image: it runs on the stock SUSE python base and
+# pip-installs its deps into an emptyDir at start (pdfplumber for the PDF
+# manuals). Slower to start, but nothing to build or import on the node.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  labels:
+    app: logicpro-docs-indexer
+  name: logicpro-docs-indexer
+  namespace: ai
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 14400
+      backoffLimit: 2
+      template:
+        spec:
+          containers:
+          - args:
+            - |
+              set -e
+              pip install --no-cache-dir --quiet --target=/deps \
+                pymilvus requests pdfplumber
+              exec python3 /scripts/index_logicpro_docs.py
+            command:
+            - /bin/sh
+            - -c
+            env:
+            # /deps is the pip --target above; PYTHONPATH is what makes it importable.
+            - name: PYTHONPATH
+              value: /deps
+            - name: PYTHONUNBUFFERED
+              value: '1'
+            # Embeddings via ollama-exporter's pass-through proxy (9401) so the
+            # batch load shows up in exporter metrics. See 04-ollama/ollama-exporter/.
+            - name: OLLAMA_URL
+              value: http://ollama-exporter.ai.svc.cluster.local:9401
+            - name: MILVUS_URI
+              value: http://milvus.ai.svc.cluster.local:19530
+            - name: EMBED_MODEL
+              value: nomic-embed-text
+            - name: EMBED_DIM
+              value: '768'
+            - name: COLLECTION
+              value: logicpro_docs
+            - name: WORKDIR
+              value: /work
+            - name: STATE_DIR
+              value: /state
+            image: registry.suse.com/bci/python:3.12
+            imagePullPolicy: IfNotPresent
+            name: indexer
+            resources:
+              limits:
+                cpu: '2'
+                memory: 4Gi
+              requests:
+                cpu: 500m
+                memory: 1Gi
+            volumeMounts:
+            - mountPath: /scripts
+              name: scripts
+            - mountPath: /deps
+              name: deps
+            - mountPath: /state
+              name: state
+            - mountPath: /work
+              name: work
+          restartPolicy: Never
+          volumes:
+          - configMap:
+              name: logicpro-docs-indexer-script
+            name: scripts
+          - emptyDir: {}
+            name: deps
+          - name: state
+            persistentVolumeClaim:
+              claimName: logicpro-docs-indexer-state
+          - emptyDir:
+              sizeLimit: 4Gi
+            name: work
+  schedule: 0 5 * * 0
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+---
+# Content-hash manifest for incremental re-embedding — small, but must survive
+# between weekly runs or every file gets re-embedded.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: logicpro-docs-indexer-state
+  namespace: ai
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: longhorn
+---
+# The indexer entrypoint, mounted at /scripts.
+apiVersion: v1
+data:
+  index_logicpro_docs.py: "#!/usr/bin/env python3\n\"\"\"\nindex_logicpro_docs.py\n\nIndex Apple's Logic Pro documentation into Milvus, incrementally.\n\nThird sibling of index_k8s_docs.py / index_suse_docs.py. Same contract:\n  - deterministic chunk IDs -> re-runs upsert, never duplicate\n  - content hashing in a PVC manifest -> unchanged content is not re-embedded\n  - deletion handling -> content that disappears upstream is removed from Milvus\n\nSource: Apple's four official Logic Pro PDFs. The HTML guide at\nsupport.apple.com/guide/logicpro is the same content spread over ~1000 pages; the PDFs\nare the same material in 4 fetches, so we take those and leave Apple's servers alone.\n\nThe Control Surfaces guide lives under 'logicpromac-css', NOT the 'logicpromac-control-\nsurfaces' the other URLs would imply. That URL was verified, not guessed.\n\nIncremental strategy differs from the git-based indexers. There is no cheap way to ask\n\"what changed\" inside a PDF, and extracting 2686 pages costs ~5 minutes of CPU. So we\nhash the PDF BYTES first: if a guide is byte-identical to last run, its pages are carried\nforward from the manifest and never re-extracted. A typical weekly run is then 4 HTTP\ndownloads and nothing else.\n\nEmbeddings: Ollama 'nomic-embed-text' (768-dim) -- MUST match the other collections.\n\"\"\"\n\nimport hashlib\nimport json\nimport os\nimport re\nimport statistics\nimport time\nfrom collections import Counter\nfrom pathlib import Path\n\nimport pdfplumber\nimport requests\nfrom pymilvus import MilvusClient, DataType\n\n# ---------------------------------------------------------------------------\n# Config (env-overridable)\n# ---------------------------------------------------------------------------\nOLLAMA_URL      = os.getenv(\"OLLAMA_URL\", \"http://ollama.ai.svc.cluster.local:11434\")\nMILVUS_URI      = os.getenv(\"MILVUS_URI\", \"http://milvus.ai.svc.cluster.local:19530\")\n\nEMBED_MODEL     = os.getenv(\"EMBED_MODEL\", \"nomic-embed-text\")\nEMBED_DIM       = int(os.getenv(\"EMBED_DIM\", \"768\"))\nCOLLECTION      = os.getenv(\"COLLECTION\", \"logicpro_docs\")\n\nWORKDIR         = Path(os.getenv(\"WORKDIR\", \"/work\"))\nSTATE_DIR       = Path(os.getenv(\"STATE_DIR\", \"/state\"))\nMANIFEST_PATH   = STATE_DIR / f\"{COLLECTION}_manifest.json\"\n\nCHUNK_MAX_CHARS = int(os.getenv(\"CHUNK_MAX_CHARS\", \"1500\"))\nCHUNK_OVERLAP   = int(os.getenv(\"CHUNK_OVERLAP\", \"200\"))\nMIN_CHUNK_CHARS = int(os.getenv(\"MIN_CHUNK_CHARS\", \"80\"))\nEMBED_RETRIES   = int(os.getenv(\"EMBED_RETRIES\", \"3\"))\n\n# guide key -> (human title, PDF url).  Override wholesale with GUIDES_JSON.\nDEFAULT_GUIDES = {\n    \"user-guide\": (\n        \"Logic Pro User Guide\",\n        \"https://help.apple.com/pdf/logicpromac/en_US/logic-pro-mac-user-guide.pdf\",\n    ),\n    \"instruments\": (\n        \"Logic Pro Instruments\",\n        \"https://help.apple.com/pdf/logicpromac-instruments/en_US/logic-pro-mac-instruments-user-guide.pdf\",\n    ),\n    \"effects\": (\n        \"Logic Pro Effects\",\n        \"https://help.apple.com/pdf/logicpromac-effects/en_US/logic-pro-mac-effects-user-guide.pdf\",\n    ),\n    \"control-surfaces\": (\n        \"Logic Pro Control Surfaces Support\",\n        \"https://help.apple.com/pdf/logicpromac-css/en_US/logic-pro-mac-control-surfaces-support-guide.pdf\",\n    ),\n}\n\n\ndef load_guides() -> dict[str, tuple[str, str]]:\n    raw = os.getenv(\"GUIDES_JSON\")\n    if raw:\n        return {k: (v[\"title\"], v[\"url\"]) for k, v in json.loads(raw).items()}\n    return DEFAULT_GUIDES\n\n\ndef log(msg: str) -> None:\n    print(f\"[{time.strftime('%H:%M:%S')}] {msg}\", flush=True)\n\n\n# ---------------------------------------------------------------------------\n# 1. Fetch\n# ---------------------------------------------------------------------------\ndef download(name: str, url: str) -> Path:\n    WORKDIR.mkdir(parents=True, exist_ok=True)\n    dest = WORKDIR / f\"{name}.pdf\"\n    log(f\"Downloading {url} ...\")\n    with requests.get(url, stream=True, timeout=300) as r:\n        r.raise_for_status()\n        ctype = r.headers.get(\"Content-Type\", \"\")\n        if \"pdf\" not in ctype.lower():\n            # A 404 page served as HTML would otherwise be \"indexed\" as gibberish.\n            raise ValueError(f\"{url} returned Content-Type '{ctype}', expected a PDF\")\n        with open(dest, \"wb\") as f:\n            for block in r.iter_content(chunk_size=1 << 20):\n                f.write(block)\n    log(f\"  {name}: {dest.stat().st_size / 1e6:.1f} MB\")\n    return dest\n\n\ndef sha256_file(path: Path) -> str:\n    h = hashlib.sha256()\n    with open(path, \"rb\") as f:\n        for block in iter(lambda: f.read(1 << 20), b\"\"):\n            h.update(block)\n    return h.hexdigest()\n\n\n# ---------------------------------------------------------------------------\n# 2. Extract -- per page, using font size to recover heading structure\n# ---------------------------------------------------------------------------\n# Repeating page furniture, e.g. \"412Logic Pro for Mac\" / \"Logic Pro Instruments 88\".\n# The (?=.*\\d) lookahead is load-bearing: without it this also matches real headings such\n# as \"Logic Pro for Mac project basics\", silently deleting the topic title from the page.\nFOOTER_RE = re.compile(r\"^\\s*(?=.*\\d)[\\d\\s]*Logic\\s*Pro[A-Za-z\\s]*\\d*\\s*$\", re.IGNORECASE)\n\n\ndef page_to_markdown(page) -> str:\n    \"\"\"Rebuild markdown-ish text from a PDF page.\n\n    Apple's PDFs have no heading tags, but they do have consistent type sizes: the topic\n    title is set noticeably larger than body copy, and the page footer noticeably smaller.\n    Rather than hardcode point sizes (they differ between the four guides), derive the body\n    size per page as the most common char size and classify each line relative to it. This\n    gives the chunker real heading boundaries instead of blind 1500-char slices.\n    \"\"\"\n    try:\n        lines = page.extract_text_lines()\n    except Exception:  # noqa: BLE001  - malformed page; fall back to flat text\n        return (page.extract_text() or \"\").strip()\n\n    if not lines:\n        return \"\"\n\n    sizes = [round(c[\"size\"], 1) for ln in lines for c in ln.get(\"chars\", [])]\n    if not sizes:\n        return (page.extract_text() or \"\").strip()\n    body_size = Counter(sizes).most_common(1)[0][0]\n\n    out: list[str] = []\n    for ln in lines:\n        text = (ln.get(\"text\") or \"\").strip()\n        if not text or FOOTER_RE.match(text):\n            continue\n        chars = ln.get(\"chars\", [])\n        if not chars:\n            out.append(text)\n            continue\n        size = statistics.median(round(c[\"size\"], 1) for c in chars)\n\n        if size < body_size * 0.8:      # page furniture / footnote chrome\n            continue\n        if size >= body_size * 1.5:     # topic title\n            out.append(f\"\\n## {text}\\n\")\n        elif size >= body_size * 1.05:  # subheading\n            out.append(f\"\\n### {text}\\n\")\n        else:\n            out.append(text)\n\n    return re.sub(r\"\\n{3,}\", \"\\n\\n\", \"\\n\".join(out)).strip()\n\n\n# ---------------------------------------------------------------------------\n# 3. Chunk (same heading-aware policy as the sibling indexers)\n# ---------------------------------------------------------------------------\nHEADING_RE = re.compile(r\"^#{1,6}\\s\", re.MULTILINE)\n\n\ndef chunk_text(text: str) -> list[str]:\n    parts, last = [], 0\n    for m in HEADING_RE.finditer(text):\n        if m.start() > last:\n            parts.append(text[last:m.start()].strip())\n            last = m.start()\n    parts.append(text[last:].strip())\n    sections = [p for p in parts if p]\n\n    chunks: list[str] = []\n    buf = \"\"\n    for sec in sections:\n        if len(sec) > CHUNK_MAX_CHARS:\n            if buf:\n                chunks.append(buf); buf = \"\"\n            start = 0\n            while start < len(sec):\n                end = start + CHUNK_MAX_CHARS\n                chunks.append(sec[start:end])\n                start = end - CHUNK_OVERLAP\n        elif len(buf) + len(sec) + 1 <= CHUNK_MAX_CHARS:\n            buf = f\"{buf}\\n{sec}\".strip()\n        else:\n            if buf:\n                chunks.append(buf)\n            buf = sec\n    if buf:\n        chunks.append(buf)\n    return [c for c in chunks if len(c.strip()) >= MIN_CHUNK_CHARS]\n\n\n# ---------------------------------------------------------------------------\n# 4. Identify / embed\n# ---------------------------------------------------------------------------\ndef chunk_id(rel_path: str, idx: int) -> int:\n    h = hashlib.sha1(f\"{rel_path}#{idx}\".encode()).hexdigest()\n    return int(h[:16], 16) & 0x7FFFFFFFFFFFFFFF\n\n\ndef embed(text: str) -> list[float]:\n    last_err = None\n    for attempt in range(EMBED_RETRIES):\n        try:\n            r = requests.post(\n                f\"{OLLAMA_URL}/api/embeddings\",\n                json={\"model\": EMBED_MODEL, \"prompt\": text},\n                timeout=120,\n            )\n            r.raise_for_status()\n            vec = r.json()[\"embedding\"]\n            if len(vec) != EMBED_DIM:\n                raise ValueError(f\"Embedding dim {len(vec)} != expected {EMBED_DIM}.\")\n            return vec\n        except Exception as e:  # noqa: BLE001\n            last_err = e\n            time.sleep(2 * (attempt + 1))\n    raise RuntimeError(f\"Embedding failed after {EMBED_RETRIES} tries: {last_err}\")\n\n\n# ---------------------------------------------------------------------------\n# 5. Milvus -- schema identical to suse_docs so the MCP server needs no new code path\n# ---------------------------------------------------------------------------\ndef ensure_collection(client: MilvusClient) -> None:\n    if client.has_collection(COLLECTION):\n        return\n    log(f\"Creating collection '{COLLECTION}' (dim={EMBED_DIM})...\")\n\
+    \    schema = client.create_schema(auto_id=False, enable_dynamic_field=True)\n    schema.add_field(\"id\", DataType.INT64, is_primary=True)\n    schema.add_field(\"vector\", DataType.FLOAT_VECTOR, dim=EMBED_DIM)\n    schema.add_field(\"text\", DataType.VARCHAR, max_length=65535)\n    schema.add_field(\"path\", DataType.VARCHAR, max_length=1024)   # \"user-guide/p0412\"\n    schema.add_field(\"repo\", DataType.VARCHAR, max_length=128)    # guide key\n    schema.add_field(\"chunk_index\", DataType.INT64)\n\n    index_params = client.prepare_index_params()\n    index_params.add_index(\n        field_name=\"vector\", index_type=\"HNSW\", metric_type=\"COSINE\",\n        params={\"M\": 16, \"efConstruction\": 200},\n    )\n    client.create_collection(collection_name=COLLECTION, schema=schema,\n                             index_params=index_params)\n\n\ndef load_manifest() -> dict:\n    if MANIFEST_PATH.exists():\n        return json.loads(MANIFEST_PATH.read_text())\n    return {}\n\n\ndef save_manifest(manifest: dict) -> None:\n    STATE_DIR.mkdir(parents=True, exist_ok=True)\n    tmp = MANIFEST_PATH.with_suffix(\".tmp\")\n    tmp.write_text(json.dumps(manifest, indent=2))\n    tmp.replace(MANIFEST_PATH)\n\n\ndef delete_ids(client: MilvusClient, ids: list[int]) -> None:\n    for i in range(0, len(ids), 500):\n        client.delete(collection_name=COLLECTION, filter=f\"id in {ids[i:i + 500]}\")\n\n\n# ---------------------------------------------------------------------------\n# Main\n# ---------------------------------------------------------------------------\ndef main() -> None:\n    client = MilvusClient(uri=MILVUS_URI)\n    ensure_collection(client)\n\n    old = load_manifest()\n    new: dict = {}\n    done_guides: set[str] = set()\n    failed: list[str] = []\n    total_changed = total_skipped = 0\n\n    for name, (title, url) in load_guides().items():\n        pdf_key = f\"__pdf__/{name}\"\n        try:\n            path = download(name, url)\n        except Exception as e:  # noqa: BLE001\n            # A dead URL must not prune this guide's chunks from the index.\n            log(f\"!! download FAILED for {name}: {e}\")\n            failed.append(name)\n            for k, v in old.items():\n                if k == pdf_key or k.startswith(f\"{name}/\"):\n                    new[k] = v\n            continue\n\n        digest = sha256_file(path)\n        if old.get(pdf_key, {}).get(\"hash\") == digest:\n            # Byte-identical to last run: carry the pages forward, skip extraction.\n            carried = 0\n            for k, v in old.items():\n                if k == pdf_key or k.startswith(f\"{name}/\"):\n                    new[k] = v\n                    carried += 1\n            done_guides.add(name)\n            total_skipped += carried - 1\n            log(f\"[{name}] unchanged (sha256 match) -- {carried - 1} pages carried forward\")\n            path.unlink(missing_ok=True)\n            continue\n\n        new[pdf_key] = {\"hash\": digest, \"title\": title, \"url\": url}\n        changed = 0\n        with pdfplumber.open(path) as pdf:\n            log(f\"[{name}] {len(pdf.pages)} pages, extracting...\")\n            for pno, page in enumerate(pdf.pages, start=1):\n                rel = f\"{name}/p{pno:04d}\"\n                try:\n                    text = page_to_markdown(page)\n                except Exception as e:  # noqa: BLE001\n                    log(f\"  !! page {pno} extract failed: {e}\")\n                    continue\n                if len(text) < MIN_CHUNK_CHARS:\n                    continue\n\n                chunks = chunk_text(text)\n                rows, ids = [], []\n                for idx, ch in enumerate(chunks):\n                    # Prefix each chunk with its provenance so a retrieved passage is\n                    # self-describing (\"which guide, which page?\") without extra lookups.\n                    body = f\"[{title} \u2014 page {pno}]\\n{ch}\"\n                    cid = chunk_id(rel, idx)\n                    ids.append(cid)\n                    rows.append({\"id\": cid, \"vector\": embed(body), \"text\": body,\n                                 \"path\": rel, \"repo\": name, \"chunk_index\": idx})\n\n                prev = old.get(rel)\n                if prev:\n                    stale = list(set(prev.get(\"ids\", [])) - set(ids))\n                    if stale:\n                        delete_ids(client, stale)\n\n                if rows:\n                    for i in range(0, len(rows), 64):\n                        client.upsert(collection_name=COLLECTION, data=rows[i:i + 64])\n                new[rel] = {\"ids\": ids}\n                changed += 1\n                if changed % 100 == 0:\n                    log(f\"  [{name}] {changed} pages indexed...\")\n\n        done_guides.add(name)\n        total_changed += changed\n        log(f\"[{name}] indexed {changed} pages\")\n        path.unlink(missing_ok=True)      # 46 MB each; do not hoard them in /work\n        save_manifest(new)                # checkpoint per guide\n\n    # Deletion pass -- only for guides processed cleanly this run (e.g. PDF got shorter).\n    removed = 0\n    for rel, entry in old.items():\n        if rel.startswith(\"__pdf__/\"):\n            continue\n        guide = rel.split(\"/\", 1)[0]\n        if guide in done_guides and rel not in new:\n            ids = entry.get(\"ids\", [])\n            if ids:\n                delete_ids(client, ids)\n            removed += 1\n\n    save_manifest(new)\n    log(f\"Done. pages_indexed={total_changed} pages_unchanged={total_skipped} \"\n        f\"pages_removed={removed} failed_guides={failed or 'none'}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+kind: ConfigMap
+metadata:
+  name: logicpro-docs-indexer-script
+  namespace: ai
