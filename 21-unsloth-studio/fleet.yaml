@@ -1,0 +1,20 @@
+# Fleet bundle — Unsloth Studio, web GUI for LLM fine-tuning (raw manifest).
+# GPU-pinned to the V100 by UUID via runtimeClassName: nvidia (NOT the device
+# plugin), and declared at replicas: 0 — ollama holds the same V100 with
+# OLLAMA_KEEP_ALIVE=-1, so scale-up is a deliberate act (see README.md).
+# Prerequisites before enabling this path: the unsloth-jupyter Secret must
+# exist in ai (see README.md), and cert-manager + letsencrypt-dns must be live
+# (Ingress hosts unsloth.ash4d.com and jupyter.ash4d.com).
+defaultNamespace: ai
+
+# Raw-manifest bundle, but Fleet still deploys it via Helm internally — so
+# adopting the objects that are already on the cluster needs takeOwnership.
+# Without it the first sync fails: the live objects carry no
+# meta.helm.sh/release-name annotation, and Helm refuses to touch resources it
+# does not believe it owns. With it, adoption is metadata-only (Helm labels on
+# the top-level objects), so no pod template changes and no restarts.
+# (This bundle is a fresh install with no pre-existing live objects, so
+# takeOwnership is a no-op on first sync — kept for convention consistency and
+# to protect a future re-adopt after a manual `kubectl apply`.)
+helm:
+  takeOwnership: true

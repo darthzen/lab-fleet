@@ -49,7 +49,7 @@ adopted, rolled back, or paused independently of every other.
 | `lab-resilio` | `resilio` | `13-resilio` | low |
 | `lab-ash4d-origin` | `ash4d-origin` | `16-ash4d-origin` | low |
 | `lab-hermes` | `hermes` | `10-hermes` | low–med — needs `hermes-webui` Secret |
-| `lab-ai` | `ai` | 9 paths (04→09) | med — **no `.yaml` file, staged by hand — see below** |
+| `lab-ai` | `ai` | 10 paths (04→09, 21) | med — **no `.yaml` file, staged by hand — see below** |
 | `lab-openshell` | `openshell` | `20-openshell` | med — **after `lab-nemoclaw`**; vendored chart |
 | `lab-buzz` | `buzz` | `17-buzz` (+ nested `17-buzz/minio`, comes automatically) | med — stateful; needs `buzz-relay` Secret |
 | `lab-lab-memory` | `lab-memory` | `18-lab-memory` (+ nested `/raw`) | **ADOPTED** 2026-07-30 after an SSA ownership handoff — zero pod restarts |
@@ -62,7 +62,10 @@ adopted, rolled back, or paused independently of every other.
 Adopt in that order. Within `lab-ai`, add paths one at a time — raw manifests
 (`08-indexer`, `09-mcp`, `07-comfyui`, `06-milvus/attu`,
 `04-ollama/ollama-exporter`, `09-mcp/ollama-code`) before the Helm charts
-(`04-ollama`, `05-open-webui`, `06-milvus`).
+(`04-ollama`, `05-open-webui`, `06-milvus`). `21-unsloth-studio` goes last —
+it is a **fresh install, not an adoption**, so Fleet deploys it the moment the
+path lands; its `unsloth-jupyter` Secret and DNS must exist first (see
+`21-unsloth-studio/README.md`).
 
 Two ordering constraints are hard, not preferences:
 
@@ -102,6 +105,8 @@ and leave everything else alone:
 # Current live state — the five raw-manifest paths (adopted 2026-07-29).
 # Append exactly ONE entry per step, in this order:
 #   09-mcp/ollama-code → 04-ollama → 05-open-webui → 06-milvus
+#     → 21-unsloth-studio (fresh install, deploys immediately — prereqs in
+#       21-unsloth-studio/README.md)
 kubectl --context rancher -n fleet-default patch gitrepo lab-ai --type=merge -p '{"spec":{"paths":[
   "08-indexer","09-mcp","07-comfyui","06-milvus/attu","04-ollama/ollama-exporter",
   "09-mcp/ollama-code"
@@ -150,7 +155,7 @@ path is documented as a patch command in each file's own header comment. Add it
 only after the first is verified Ready. Every other file is single-path.
 
 `lab-ai` is the one namespace with no file at all: it has *five* adopted paths and
-three pending, and a file listing only one unadopted path would misrepresent the
+four pending, and a file listing only one unadopted path would misrepresent the
 five that are live. Commands above.
 
 ### `03-gpu/runtimeclass` is not just a staging question
@@ -208,7 +213,7 @@ goal eventually but will fight this cluster's hand-tuning habits.
 | `lab-emby` | ✅ adopted 2026-07-29 — no-op, no restart |
 | `lab-resilio` | ✅ adopted 2026-07-29 — no-op, no restart |
 | `lab-hermes` | ✅ adopted 2026-07-29 — needed a manual pre-apply; one expected restart |
-| `lab-ai` | 🔶 **partial** — 5 raw paths adopted 2026-07-29 (all no-ops). The 3 Helm paths (`04-ollama`, `05-open-webui`, `06-milvus`) are **not yet added to the live GitRepo**. No `.yaml` file — patch `spec.paths` to widen |
+| `lab-ai` | 🔶 **partial** — 5 raw paths adopted 2026-07-29 (all no-ops). The 3 Helm paths (`04-ollama`, `05-open-webui`, `06-milvus`) and `21-unsloth-studio` (fresh install, not an adoption) are **not yet added to the live GitRepo**. No `.yaml` file — patch `spec.paths` to widen |
 | `lab-metallb-system` | not yet applied |
 | `lab-nvidia-device-plugin` | not yet applied |
 | `lab-cattle-monitoring-system` | not yet applied |
