@@ -1,0 +1,5 @@
+I want an implementation of openchoreo running in my lab. It should be deployed via fleet and have its own namespace and fleet app bundle
+
+---
+
+I'm getting a 404 on openchoreo.ash4d.com, and I can't find the deployment in my workloads. What is the deployment name(s) and what namespace?
