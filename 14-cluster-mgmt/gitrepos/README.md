@@ -52,7 +52,7 @@ adopted, rolled back, or paused independently of every other.
 | `lab-ai` | `ai` | 9 paths (04→09) | med — **no `.yaml` file, staged by hand — see below** |
 | `lab-openshell` | `openshell` | `20-openshell` | med — **after `lab-nemoclaw`**; vendored chart |
 | `lab-buzz` | `buzz` | `17-buzz` (+ nested `17-buzz/minio`, comes automatically) | med — stateful; needs `buzz-relay` Secret |
-| `lab-lab-memory` | `lab-memory` | `18-lab-memory/raw` only — **karakeep is NOT adopted**, see below | blocked on SSA field conflicts |
+| `lab-lab-memory` | `lab-memory` | `18-lab-memory` (+ nested `/raw`) | **ADOPTED** 2026-07-30 after an SSA ownership handoff — zero pod restarts |
 | `lab-metallb-system` | `metallb-system` | `01-networking` — then patch in `01-networking/pools` | med–high |
 | `lab-nvidia-device-plugin` | `nvidia-device-plugin` | `03-gpu` — `03-gpu/runtimeclass` is **on hold, k3s owns it** | med–high |
 | `lab-cattle-monitoring-system` | `cattle-monitoring-system` | `03-gpu/dcgm-exporter` | med |
@@ -85,6 +85,15 @@ widen the GitRepo by however many paths were still unadopted, in one shot, which
 is exactly what the one-at-a-time rule exists to prevent. A file whose whole
 convention is "apply me" cannot safely hold a staged rollout, so the staging lives
 here as commands instead.
+
+Because it has no file, `lab-ai` also misses anything the files carry — notably
+`pollingInterval`. It was set by hand and must be re-set if the GitRepo is ever
+recreated:
+
+```bash
+kubectl --context rancher -n fleet-default patch gitrepo lab-ai --type=merge \
+  -p '{"spec":{"pollingInterval":"60s"}}'
+```
 
 `spec.paths` is the only field that changes between steps, so widen by patching it
 and leave everything else alone:
