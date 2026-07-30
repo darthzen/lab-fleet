@@ -3,11 +3,13 @@
     helm repo add ollama-helm https://helm.otwld.com/
     helm upgrade --install ollama ollama-helm/ollama --version 1.67.0 -n ai --create-namespace -f values.yaml
 
-Key choices: Tesla V100 (32 GB) pinned by GPU UUID; flash attention + q8_0 KV
-cache to fit useful contexts; `OLLAMA_CONTEXT_LENGTH=98304` (96k) with
-`OLLAMA_NUM_PARALLEL=2`; LoadBalancer at `192.168.7.153:11434` so LAN clients
-(Claude Code via ollama-code-mcp, the Xcode instance) reach it directly. 200Gi
-Longhorn PV for models.
+Key choices: Tesla V100 (32 GB) pinned by GPU UUID; flash attention with an
+**f16 KV cache** (full precision — accuracy over concurrency);
+`OLLAMA_CONTEXT_LENGTH=131072` (128k) with `OLLAMA_NUM_PARALLEL=1`;
+LoadBalancer at `192.168.7.153:11434` so LAN clients (Claude Code via
+ollama-code-mcp, the Xcode instance) reach it directly. 200Gi Longhorn PV for
+models. Coding tags are declared in `values.yaml` under `ollama.models.create`
+with sampling pinned for precision — see "Sampling tags" below.
 
 ## Context length
 
@@ -24,24 +26,38 @@ History:
   ~703 MiB of qwen3-coder:30b onto the CPU and prompt processing fell to
   152 tok/s, declining further as context grew.
 - 2026-07-30 — settled at 98304 (96k) x 2 slots. Still clears the 64k floor.
+- 2026-07-30 (later) — moved to 131072 (128k) x 1 slot with **f16 KV**, sized
+  by measurement for the new primary `qwen3.6:27b` (UD-Q6_K_XL). The hybrid
+  SSM architecture makes KV ~2.6x cheaper per token than `qwen3-coder:30b`,
+  which pays for both the precision upgrade and the larger context.
 
 ## VRAM budget
 
-Primary model is `qwen3-coder:30b` (30.5B MoE, Q4_K_M, 48 layers, 4 KV heads,
-head_dim 128 → 49152 KV elements/token).
+Primary model is `qwen3.6:27b` (27.8B dense, UD-Q6_K_XL, arch `qwen35` —
+64 blocks, hybrid attention + state-space). KV cost **cannot be computed from
+GGUF metadata**: `qwen35.attention.head_count_kv` is null and the ratio of
+full-attention to state-space layers is not exposed. It was measured on the
+live pod, 2026-07-30, by loading at two contexts and subtracting:
+
+| Load (q8_0 KV, 2 slots) | `size_vram` |
+|---|---|
+| `num_ctx` 8192 | 25,113,500,056 B |
+| `num_ctx` 98304 | 28,701,727,128 B |
+
+Derived: `(28701727128 − 25113500056) / (2 × 90112)` = **19,910 B/token at
+q8_0** → **~37,470 B/token at f16** (×1.882). Sanity: qwen3-coder:30b measured
+52,224 B/token q8_0 with the same method.
 
 | Component | Size |
 |---|---|
 | Card (Tesla V100 32GB) | 31.75 GiB |
-| Weights | 17.3 GiB |
-| KV cache, q8_0 @ 96k x 2 | 9.56 GiB |
-| Compute buffers (estimated) | ~1.0 GiB |
-| Headroom | ~3.3 GiB |
+| Weights + compute buffers (measured) | 23.09 GiB |
+| KV cache, f16 @ 128k x 1 | 4.57 GiB |
+| Headroom | ~4.1 GiB |
 
-q8_0 costs 51 KiB/token, so KV scales as `ctx x slots x 51 KiB`. Alternatives in
-the same envelope: 112k x 2 (11.16 GiB), 128k x 2 (12.75 GiB, no headroom),
-64k x 3 (9.56 GiB). Dropping KV to f16 doubles every figure above and will not
-fit.
+KV scales as `ctx x slots x 36.6 KiB` at f16. In the same envelope: 96k
+(3.43 GiB), 192k (6.86 GiB — fits on paper but extrapolates 2x past the
+measured range), 256k (9.15 GiB — over budget).
 
 After any change to context, parallelism, or KV cache type, confirm the model is
 entirely on GPU:
@@ -49,21 +65,52 @@ entirely on GPU:
     curl -s http://192.168.7.153:11434/api/ps | jq '.models[] | {size, size_vram, context_length}'
 
 `size_vram` must equal `size`. Any gap is CPU offload — reduce context or slots.
+Do not fall back to q8_0 KV to close a gap without an explicit decision; dropping
+KV precision is what the 2026-07-30 change exists to avoid.
+
+Also check the model-load log line confirms `flash_attn = 1`: the V100 is Volta
+(SM70), llama.cpp's newer FA kernels target Turing+, and FA being active there
+has only ever been inferred from VRAM numbers, never read from a log
+(2026-07-30 session, open question). With f16 KV this is a performance
+question, not a correctness one.
+
+## Sampling tags
+
+The coding tags (`*-precise`) are declared in `values.yaml` under
+`ollama.models.create` — Fleet is the source of truth for sampling parameters,
+and the tags are recreated automatically on a volume rebuild. Do not create or
+tune tags ad hoc on the server; change `values.yaml` and let Fleet sync.
+
+Superseded tags that predate this (created on the server 2026-07-30, params
+recorded here before retirement — both parents were the Q4_K_M pulls and both
+carried the same precise sampling as the declared tags):
+
+- `qwen3.6:27b-precise` — FROM `qwen3.6:27b` (Q4_K_M, tag since deleted)
+- `qwen3-coder:30b-precise` — FROM `qwen3-coder:30b` (Q4_K_M, tag since
+  deleted), plus stops `<|im_start|>` `<|im_end|>` `<|endoftext|>`
 
 ## Upgrade procedure
 
-Scale to zero first. On 2026-07-16 an in-place change wedged the old ollama
-process, which ignored SIGTERM and took the V100 off the bus ("GPU is lost",
-`nvidia-smi` hung on sdf1). Force-deleting the stuck pod then produced a
-~250-pod `UnexpectedAdmissionError` ReplicaSet storm.
+**Fleet is canonical (Rick, 2026-07-30). Every change to this deployment goes
+through git — edit `values.yaml`, commit, push, and let Fleet sync. No manual
+`helm upgrade`, no `kubectl edit`.**
 
-    kubectl --context default -n ai scale deploy/ollama --replicas=0
-    kubectl --context default -n ai rollout status deploy/ollama --timeout=180s
-    helm --kube-context default upgrade --install ollama ollama-helm/ollama \
-      --version 1.67.0 -n ai -f values.yaml
+Rollout still requires the scale-to-zero guard: on 2026-07-16 an in-place
+change wedged the old ollama process, which ignored SIGTERM and took the V100
+off the bus ("GPU is lost", `nvidia-smi` hung on sdf1). Force-deleting the
+stuck pod then produced a ~250-pod `UnexpectedAdmissionError` ReplicaSet storm.
 
-`helm list` looks empty for sdf1 releases unless you pass `--kube-context default`
-— the Mac defaults to the `rancher` context (khyron).
+Sequence for a config change:
+
+    # 1. Drain the running pod BEFORE the push
+    kubectl --context sdf1 -n ai scale deploy/ollama --replicas=0
+    kubectl --context sdf1 -n ai rollout status deploy/ollama --timeout=180s
+    # 2. Push the commit; Fleet applies the bundle and restores replicas
+    git push
+
+Kube contexts on the Mac are `rancher` (khyron, the default) and `sdf1` —
+commands without `--context sdf1` land on the wrong cluster. (Older notes said
+`default`; that context name is gone.)
 
 ## ollama-exporter
 

@@ -12,44 +12,57 @@ extraEnv:
 - name: OLLAMA_KEEP_ALIVE
   value: "-1"
 # ollama sizes the KV cache as num_ctx x num_parallel — each slot reserves the
-# full OLLAMA_CONTEXT_LENGTH, they do not share one window. Confirmed against
-# the live pod 2026-07-30: 262144 ctx x 1 slot held ~30.4 GiB of the V100, so
-# 2 slots at that context would need ~43 GiB. 2 x 98304 costs 9.56 GiB of KV.
+# full OLLAMA_CONTEXT_LENGTH, they do not share one window. 1 slot as of
+# 2026-07-30: this box serves one precise coding session at a time, and a
+# second slot would cost another full context's worth of f16 KV (4.57 GiB at
+# 128k) purely for queueing convenience. Clients queue instead.
 - name: OLLAMA_NUM_PARALLEL
-  value: "2"
+  value: "1"
 # Global DEFAULT context for requests that don't pass num_ctx; ollama clamps
 # per model to that model's trained maximum.
 #
-# 98304 (96k) chosen 2026-07-30. This is per parallel slot, so the real cost is
-# 98304 x OLLAMA_NUM_PARALLEL. Sized for qwen3-coder:30b (see the KV budget
-# note below). Still clears the 64k floor that hermes-agent (10-hermes) needs.
+# 131072 (128k) chosen 2026-07-30, sized for qwen3.6:27b (UD-Q6_K_XL) by
+# measurement, not GGUF metadata — the qwen35 architecture reports
+# head_count_kv as null and does not expose the full-attention/state-space
+# layer ratio, so KV cost per token cannot be computed. Measured on the live
+# pod 2026-07-30 (q8_0 KV, 2 slots reserved):
+#     num_ctx  8192 -> size_vram 25113500056
+#     num_ctx 98304 -> size_vram 28701727128
+#     delta / (2 slots x 90112 tokens) = 19910 B/token at q8_0
+#                                      = ~37470 B/token at f16 (x1.882)
+# For comparison, qwen3-coder:30b cost 52224 B/token at q8_0 — the hybrid
+# SSM layers make long context ~2.6x cheaper than a standard transformer.
+#
+# Fixed cost (weights + buffers) measured at 23.09 GiB, leaving ~8.66 GiB
+# for KV on the 31.75 GiB card. At f16 x 1 slot:
+#      98304 -> 3.43 GiB
+#     131072 -> 4.57 GiB   <- current setting, ~4.1 GiB headroom
+#     196608 -> 6.86 GiB   (fits on paper, but extrapolates 2x past the
+#                           measured range — do not assume without measuring)
+#     262144 -> 9.15 GiB   (over budget)
+#
+# Hard floor is 65536: hermes-agent (10-hermes) needs at least 64k. Below
+# that, hermes auto-detects 262144 from model metadata, packs prompts to fit,
+# and every response returns finish_reason='length' (2026-07-18 incident).
 #
 # Keep this declared in the chart. The live Deployment has drifted twice from
 # out-of-band `kubectl edit` (65536 on 2026-07-18, 262144 on 2026-07-29), which
 # helm never knew about — an undeclared value gets silently reset to ollama's
 # built-in default on the next upgrade.
 - name: OLLAMA_CONTEXT_LENGTH
-  value: "98304"
-# Both are load-bearing for the context sizing above, NOT optional tuning.
-# llama.cpp only honours a quantized KV cache when flash attention is on —
-# without FA the cache silently falls back to f16 and doubles.
+  value: "131072"
+# Flash attention stays on for prompt-processing speed regardless of KV type.
 #
-# KV budget for qwen3-coder:30b (Q4_K_M, 48 layers, 4 KV heads, head_dim 128
-# -> 49152 KV elements/token). q8_0 is 1.0625 bytes/element = 51 KiB/token:
-#      96k x 2 slots ->  9.56 GiB KV   <- current setting
-#     112k x 2 slots -> 11.16 GiB KV
-#     128k x 2 slots -> 12.75 GiB KV   (no headroom)
-#     256k x 1 slot  -> 12.75 GiB KV   (was live; caused CPU offload)
-# Weights are 17.3 GiB, leaving roughly 12.9 GiB for KV plus compute buffers
-# on the 31.75 GiB V100.
-#
-# Evidence for moving off 256k — /api/ps on 2026-07-30 at 262144 x 1:
-#   size 33354990164 vs size_vram 32617026026 = ~703 MiB resident on CPU,
-#   with prompt processing at 152 tok/s and falling as context grew.
+# KV cache moved q8_0 -> f16 on 2026-07-30, deliberately: full-precision KV,
+# no cache quantization error. Priority is accuracy over concurrency after the
+# fossa-mcp hallucination incident. The budget math is in the
+# OLLAMA_CONTEXT_LENGTH note above — f16 at 128k x 1 slot uses 4.57 GiB of
+# the 8.66 GiB available. Do NOT quietly drop back to q8_0 to make a bigger
+# context or a second slot fit; that trade needs an explicit decision.
 - name: OLLAMA_FLASH_ATTENTION
   value: "1"
 - name: OLLAMA_KV_CACHE_TYPE
-  value: q8_0
+  value: f16
 ollama:
   gpu:
     # false ON PURPOSE, and this is what the cluster actually runs. Setting it
@@ -64,6 +77,50 @@ ollama:
     pull:
     - llama3.1
     - nomic-embed-text
+    # Model-selection experiment candidates, 2026-07-30 (see README). Prune to
+    # the winner once the neuvector-mcp experiment decides.
+    - hf.co/unsloth/Qwen3.6-27B-GGUF:UD-Q6_K_XL
+    - hf.co/unsloth/Qwen3.6-27B-GGUF:Q8_0
+    - hf.co/unsloth/Devstral-Small-2-24B-Instruct-2512-GGUF:UD-Q6_K_XL
+    # Coding tags with sampling pinned for precision. Stock sampling on the
+    # upstream tags is tuned for chat, not code — qwen3.6:27b shipped
+    # presence_penalty 1.5, which pushes the model away from tokens it already
+    # emitted; correct code repeats identifiers, imports and braces constantly.
+    # That default is the leading suspect for the fossa-mcp hallucinations.
+    # temperature 0.15 rather than 0.0 because greedy decoding can put Qwen
+    # models into repetition loops.
+    #
+    # Declared here (not created ad hoc on the server) so the tags are Fleet-
+    # managed and survive a volume rebuild. Before 2026-07-30 they existed only
+    # on the Longhorn PVC.
+    create:
+    - name: qwen3.6:27b-q6-precise
+      template: |
+        FROM hf.co/unsloth/Qwen3.6-27B-GGUF:UD-Q6_K_XL
+        PARAMETER temperature 0.15
+        PARAMETER top_p 0.9
+        PARAMETER top_k 20
+        PARAMETER repeat_penalty 1.0
+        PARAMETER presence_penalty 0
+        PARAMETER min_p 0
+    - name: qwen3.6:27b-q8-precise
+      template: |
+        FROM hf.co/unsloth/Qwen3.6-27B-GGUF:Q8_0
+        PARAMETER temperature 0.15
+        PARAMETER top_p 0.9
+        PARAMETER top_k 20
+        PARAMETER repeat_penalty 1.0
+        PARAMETER presence_penalty 0
+        PARAMETER min_p 0
+    - name: devstral2:24b-q6-precise
+      template: |
+        FROM hf.co/unsloth/Devstral-Small-2-24B-Instruct-2512-GGUF:UD-Q6_K_XL
+        PARAMETER temperature 0.15
+        PARAMETER top_p 0.9
+        PARAMETER top_k 20
+        PARAMETER repeat_penalty 1.0
+        PARAMETER presence_penalty 0
+        PARAMETER min_p 0
 persistentVolume:
   enabled: true
   # 200Gi is the deployed size. PVCs cannot shrink — this file previously said
