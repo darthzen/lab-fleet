@@ -9,9 +9,15 @@ data:
   # cluster-internal service DNS name instead if you ever run Ollama and this
   # server in the same cluster and want to skip the external hop.
   OLLAMA_BASE_URL: "http://ollama.ash4d.com:11434"
-  OLLAMA_MODEL: "qwen3-coder:30b"
+  # Must be a tag that exists on the server — see 04-ollama/values.yaml
+  # models.create. The previous value (qwen3-coder:30b) was deleted on
+  # 2026-07-30 and every call through this server failed model-not-found.
+  OLLAMA_MODEL: "qwen3.6:27b-q6-precise"
   OLLAMA_TIMEOUT: "900"
-  OLLAMA_NUM_CTX: "8192"
+  # Matches OLLAMA_CONTEXT_LENGTH on the server (96k x 1 slot, f16 KV —
+  # sizing rationale in 04-ollama/values.yaml). A smaller per-request value
+  # here would silently truncate long coding prompts.
+  OLLAMA_NUM_CTX: "98304"
   OLLAMA_MCP_ALLOWED_DIR: "/workspace"
   OLLAMA_MCP_MAX_BATCH_FILES: "20"
   OLLAMA_MCP_DEFAULT_THINK: "true"
