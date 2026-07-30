@@ -61,6 +61,10 @@ goal eventually but will fight this cluster's hand-tuning habits.
 | `lab-node-red` | ✅ **adopted 2026-07-29** — verified no-op, no pod restart |
 | everything else | not yet applied |
 
+`c-nnzn9` (sdf1) is the only Fleet-managed downstream; the junk
+`cluster-ee8f7993b3a6` was deleted 2026-07-29. So the `ash4d-lab: ""` selector in
+these files resolves to exactly one cluster.
+
 ## Prerequisite: the fleet-agent must be able to register
 
 This blocked everything until 2026-07-29 (`agent-tls-mode` was `strict` with an

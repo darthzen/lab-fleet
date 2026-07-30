@@ -63,16 +63,18 @@ token was needed. Both were wrong as of 2026-07-29:
   directly, so the whole flow can be driven with `kubectl` — no `RTOKEN`, no
   `/v3/features` call.
 - `c-nnzn9` is registered in workspace **`fleet-default`**.
-- **Working precedent already on the controller:** GitRepo
-  `fleet-default/ash4d-site` → `https://github.com/darthzen/ash4d.com`, branch
-  `main`, `paths: ["deploy"]`, target `clusterSelector.matchLabels.site=ash4d`.
-  It is Ready 1/1 — but it targets `cluster-ee8f7993b3a6` (a *different*
-  downstream, last seen 2026-07-17), **not** `c-nnzn9`. Copy its shape, don't
-  reuse its selector.
+- At the start of this work there was a second GitRepo,
+  `fleet-default/ash4d-site` → `https://github.com/darthzen/ash4d.com`,
+  `paths: ["deploy"]`, target `site=ash4d`, which resolved to the junk
+  `cluster-ee8f7993b3a6` rather than `c-nnzn9`. Both it and its bundle were gone
+  later the same session (not removed as part of this work) and the junk cluster
+  has since been deleted — see the cleanup note below. **`c-nnzn9` is now the only
+  Fleet-managed downstream**, alongside `fleet-local/local`.
 
 **Target label for this cluster:** `c-nnzn9` already carries a bespoke
 `ash4d-lab: ""` label — use that rather than
-`management.cattle.io/cluster-name`, which is Rancher-managed.
+`management.cattle.io/cluster-name`, which is Rancher-managed. (The old
+`site=ash4d` selector belonged to the deleted junk cluster; do not reuse it.)
 
 ```yaml
 targets:
@@ -238,6 +240,24 @@ The old note said to run `kubectl -n cattle-fleet-system get bundledeployments`
 **downstream** — that fails here (`the server doesn't have a resource type
 "bundledeployments"`), because this Fleet version keeps BundleDeployments on the
 controller in the per-cluster namespace shown above.
+
+## Controller cleanup
+
+`2026-07-29` — deleted the Fleet cluster `cluster-ee8f7993b3a6`. It was a
+**self-registered** Fleet cluster (label `fleet.cattle.io/created-by-agent-pod`),
+not Rancher-managed: `clusters.management.cattle.io` only ever listed `c-nnzn9`
+(sdf1) and `local`. Its agent last checked in 2026-07-17 and did not recover after
+the `agent-tls-mode` fix, so the host is presumed gone.
+
+Its cluster namespace held nothing but its own fleet-agent BundleDeployment and a
+registration ServiceAccount/token; deleting the Cluster cascaded both away and the
+namespace terminated cleanly. No leftover clusterregistrations — the only ones
+remaining belong to `c-nnzn9`. sdf1 and `lab-node-red` were unaffected (verified:
+same node-red pod UID, 0 restarts, bundle still 1/1).
+
+If that host ever comes back online its agent will re-register and reappear as a
+new self-registered cluster. To prevent that, uninstall fleet-agent from the host
+itself — deleting the Cluster object here does not touch it.
 
 ## Adoption log
 
