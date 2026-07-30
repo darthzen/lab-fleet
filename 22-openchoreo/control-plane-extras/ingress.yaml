@@ -1,0 +1,92 @@
+# Traefik ingress for the whole OpenChoreo control plane.
+#
+# ─── The two-hop path, and why it looks redundant ────────────────────────────
+#     browser -> Traefik  (192.168.7.150, TLS terminates here)
+#             -> gateway-default  (kgateway Envoy, ClusterIP)
+#             -> HTTPRoute host match -> backstage / openchoreo-api / thunder
+#
+# Two proxies in a row is not an accident. OpenChoreo's charts only speak
+# Gateway API — they render Gateways, HTTPRoutes and an HTTPListenerPolicy,
+# and Thunder attaches its own HTTPRoute to `gateway-default` — so kgateway
+# has to be the thing doing host and path routing. But every ash4d.com name in
+# this cluster resolves to Traefik, and the DNS for these three already
+# pointed there before this bundle existed. Fronting kgateway with Traefik
+# means one LoadBalancer address instead of three (see ../kgateway-params/),
+# and one TLS story shared with every other service in the repo.
+#
+# All three hosts route to the SAME backend Service on the SAME port. That is
+# correct and not a copy-paste error: Traefik is doing nothing but TLS
+# termination and forwarding here. The actual per-host dispatch happens one
+# hop later, in kgateway, against the HTTPRoutes that the control-plane chart
+# and Thunder create.
+#
+# ─── The backend Service name ────────────────────────────────────────────────
+# `gateway-default` is the Service kgateway PROVISIONS for the Gateway object
+# of the same name — it is created by the kgateway controller at runtime, not
+# by any chart in this repo, so it will not exist until ../control-plane/ has
+# been deployed and kgateway has reconciled its Gateway. Traefik returns 503
+# for these hosts until then, which is the expected intermediate state and not
+# a fault. Confirm the name on first deploy with
+#
+#     kubectl -n openchoreo-control-plane get svc,gateway
+#
+# and if kgateway ever changes its naming convention, this file is the single
+# place that needs updating.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openchoreo
+  namespace: openchoreo-control-plane
+  annotations:
+    # cert-manager's ingress-shim mints a Certificate from the tls block
+    # below — one cert, three SANs, one DNS-01 round trip. Same convention as
+    # 06-milvus/attu, 10-hermes and 21-unsloth-studio.
+    cert-manager.io/cluster-issuer: letsencrypt-dns
+spec:
+  ingressClassName: traefik
+  rules:
+    # The developer portal (Backstage).
+    - host: openchoreo.ash4d.com
+      http:
+        paths:
+          - backend:
+              service:
+                name: gateway-default
+                port:
+                  number: 80
+            path: /
+            pathType: Prefix
+    # The OpenChoreo API — also what the `openchoreo` CLI talks to.
+    - host: api.openchoreo.ash4d.com
+      http:
+        paths:
+          - backend:
+              service:
+                name: gateway-default
+                port:
+                  number: 80
+            path: /
+            pathType: Prefix
+    # Thunder, the OIDC provider. It runs in the `thunder` namespace but
+    # attaches its HTTPRoute to this namespace's Gateway
+    # (../thunder/values.yaml, httproute.parentRefs), so it is reached through
+    # the same Service — no second Ingress and no cross-namespace backend.
+    - host: thunder.ash4d.com
+      http:
+        paths:
+          - backend:
+              service:
+                name: gateway-default
+                port:
+                  number: 80
+            path: /
+            pathType: Prefix
+  tls:
+    # One secret for all three hosts. Keeping them in a single tls entry is
+    # what makes the shim issue ONE Certificate with three SANs instead of
+    # three separate DNS-01 challenges against the same zone.
+    - hosts:
+        - openchoreo.ash4d.com
+        - api.openchoreo.ash4d.com
+        - thunder.ash4d.com
+      secretName: openchoreo-ash4d-tls

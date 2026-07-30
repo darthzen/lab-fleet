@@ -1,0 +1,37 @@
+# Fleet bundle — observability-plane secrets and ingress (raw manifests).
+#
+# Two ExternalSecrets and one Traefik Ingress:
+#   externalsecrets.yaml — observer-secret and opensearch-admin-credentials
+#   ingress.yaml         — observer.openchoreo.ash4d.com
+#
+# Separate path from ../observability-plane/ because Fleet allows one chart
+# per path.
+#
+# 🔴 ENABLE THIS BEFORE ../observability-plane/. That chart hard-fails its
+# render when `observer.secretName` is unset, and ../observability-plane/
+# names `observer-secret` — the Secret this bundle materialises. The
+# OpenSearch credentials are likewise consumed by ../observability-logs/,
+# ../observability-traces/ and ../observability-events/, all of which reference
+# `opensearch-admin-credentials` by name.
+#
+# 🔴 ingress.yaml NEEDS A DNS RECORD THAT DID NOT EXIST WHEN THIS WAS WRITTEN:
+#
+#     observer.openchoreo.ash4d.com   A   192.168.7.150
+#
+# Checked 2026-07-30: NXDOMAIN. Backstage's observability tab calls the
+# observer FROM THE BROWSER, so this is not an internal-only URL — without the
+# record, logs and traces in the portal fail with a CORS/DNS error while
+# everything else works. The control plane's own server-side calls use the
+# in-cluster Service URL instead (../registration/clusterplanes.yaml) and are
+# unaffected.
+#
+# ORDERING: needs ../external-secrets/ and ../secret-store/ for the
+# ExternalSecrets, and 15-cert-manager for the certificate. Nothing here waits
+# on the observability chart itself.
+defaultNamespace: openchoreo-observability-plane
+
+# Raw-manifest bundle, but Fleet still deploys it via Helm internally — so
+# adopting objects that are already on the cluster needs takeOwnership. A
+# no-op on first sync; kept for convention.
+helm:
+  takeOwnership: true

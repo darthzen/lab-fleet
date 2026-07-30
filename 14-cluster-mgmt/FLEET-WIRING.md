@@ -171,6 +171,60 @@ Leave `correctDrift` disabled at first. Turning it on makes Fleet revert
 out-of-band `kubectl edit`s — desirable eventually, but it will fight the
 hand-tuning habits this cluster has (see the ComfyUI and Ollama notes below).
 
+## `22-openchoreo` — the first bundle that is a platform, not an app
+
+`2026-07-30` — added, **not yet enabled**. 20 Fleet paths across seven
+namespaces (OpenChoreo v1.2.1: control, data, workflow and observability
+planes, plus kgateway, External Secrets, OpenBao and the Thunder IdP). Full
+detail in `22-openchoreo/README.md`; the parts that generalise beyond it:
+
+- **A whole product can be one GitRepo.** `lab-openchoreo` breaks the
+  `lab-<namespace>` rule because its seven namespaces are not independently
+  useful — the planes register with each other over mTLS. Staged by
+  `spec.paths`, the `lab-ai` way.
+- **The Gateway API CRDs on this cluster belong to k3s.** `traefik-crd` in
+  `kube-system` owns `gateway.networking.k8s.io` v1.5.1 (standard channel)
+  with `helm.sh/resource-policy: keep`. OpenChoreo's installer wants to
+  `kubectl apply` exactly that version; doing so would be `03-gpu/runtimeclass`
+  again, with every Ingress in the cluster downstream. **Same class of finding
+  as the RuntimeClass one: check who owns a cluster-scoped CRD before shipping
+  it, even when the version matches.**
+- **A second kube-prometheus-stack is a real collision.** The OpenChoreo
+  metrics module bundles one with `crds.enabled: true`, and this cluster
+  already runs `rancher-monitoring` whose operator watches all namespaces.
+  Resolved by disabling the bundled CRDs *and* operator and letting Rancher's
+  reconcile OpenChoreo's `Prometheus`/`Alertmanager` objects — one operator,
+  two instances. Leaves a v0.87.1-CRDs / v0.88.1-chart skew, which is why that
+  path is enabled last and is explicitly droppable.
+- **Not every "imperative" install step actually is.** Upstream's installer
+  shells out for each plane's agent CA and inlines the PEM into the
+  registration CRs, which cannot be committed. The v1.2.1 CRDs also accept
+  `clientCA.secretKeyRef` with a cross-namespace `namespace`, so registration
+  became an ordinary Fleet path. **Read the CRD schema before concluding
+  something has to be a manual step** — one of the two apparent bootstrap
+  steps here evaporated, and the other (copying the cluster-gateway CA into a
+  ConfigMap per namespace) genuinely did not.
+- **This cluster has TWO default StorageClasses.** `local-path` and `longhorn`
+  are both annotated `is-default-class: true`, so an unset `storageClassName`
+  is ambiguous, not defaulted. Every PVC in `22-openchoreo` names `longhorn`
+  explicitly. Worth fixing cluster-wide, separately.
+- **The repo's no-secrets rule got its first deliberate exception.**
+  `22-openchoreo/thunder/values.yaml` and `openbao/values.yaml` commit
+  OpenChoreo's published upstream fixture credentials, because each value must
+  byte-match on both sides of an OIDC handshake and Thunder's half lives inside
+  a 34 KB bootstrap script. Bounded by the fact that all five OpenChoreo
+  hostnames resolve to 192.168.7.150, a LAN address. Rotation procedure is in
+  that README. **This is not a precedent** — every other secret in this repo
+  stays a documented out-of-band prerequisite.
+- **Fleet paths were verified by rendering, not by hoping.** All 13 charts
+  `helm template`d clean against their pinned versions with these values, and
+  the four hand-written custom resources were validated against the real
+  v1.2.1 / kgateway v2.3.1 CRD JSON schemas. Two of the OpenChoreo charts
+  hard-fail their *render* on placeholder hostnames or a missing secret name,
+  so a misconfiguration there is a controller-side error rather than a broken
+  cluster — convenient, but it also means those paths cannot be enabled
+  speculatively.
+
 ## Watch-outs
 
 - **Helm adoption is the real hazard, and `helm get values` will not show it.**

@@ -1,0 +1,134 @@
+# OpenChoreo control plane.
+#
+# Derived from the upstream single-cluster reference values
+# (install/k3d/single-cluster/values-cp.yaml at release-v1.2), with three
+# categories of change: real hostnames instead of `.localhost`, TLS moved to
+# Traefik, and single-node scheduling fixes.
+#
+# ─── Hostnames and how traffic actually arrives ──────────────────────────────
+# Public DNS (verified 2026-07-30):
+#     openchoreo.ash4d.com      -> 192.168.7.150
+#     api.openchoreo.ash4d.com  -> 192.168.7.150
+#     thunder.ash4d.com         -> 192.168.7.150
+# .150 is the Traefik LoadBalancer, so the path is
+#
+#     browser -> Traefik (TLS terminates here, ../control-plane-extras/)
+#             -> gateway-default kgateway Service, ClusterIP
+#             -> HTTPRoute host match -> openchoreo-api / backstage / thunder
+#
+# All three are real public DNS records pointing at a LAN address, the same
+# pattern every other ash4d.com service in this repo uses. That is also why
+# the fixture credentials in ../thunder/values.yaml and ../openbao/values.yaml
+# are tolerable here: none of this is internet-reachable.
+#
+# Note thunder.ash4d.com is NOT under `.openchoreo.` — it is a sibling. The
+# upstream file puts thunder under the openchoreo subdomain; this deployment
+# does not, because that is the record that already exists.
+#
+# ─── A note on single-node scheduling ────────────────────────────────────────
+# The chart gives controller-manager, openchoreo-api and backstage identical
+# topologySpreadConstraints, including
+#
+#     topologyKey: kubernetes.io/hostname
+#     whenUnsatisfiable: DoNotSchedule
+#
+# which is correct on a multi-node cluster and inert at replicas: 1 — a single
+# pod always satisfies maxSkew: 1. Left alone deliberately rather than
+# emptied: it costs nothing now and is what would keep these spread if this
+# cluster ever grew a second node. If any component here is ever scaled past 1
+# while the cluster is still one node, the extra pods go Pending — that is the
+# moment to revisit it, not now.
+
+security:
+  oidc:
+    # Must match ../thunder/values.yaml's publicUrl exactly. The `iss` claim in
+    # Thunder's tokens is string-compared against this, so a scheme or
+    # trailing-slash mismatch surfaces as "invalid issuer" on every login
+    # rather than as anything that names this file.
+    issuer: "https://thunder.ash4d.com"
+    jwksUrl: "https://thunder.ash4d.com/oauth2/jwks"
+    authorizationUrl: "https://thunder.ash4d.com/oauth2/authorize"
+    tokenUrl: "https://thunder.ash4d.com/oauth2/token"
+
+features:
+  # OpenChoreo's developer-facing secret management, resolving through the
+  # `default` ClusterSecretStore (../secret-store/). Enabled to match
+  # upstream's single-cluster reference — but read ../openbao/fleet.yaml
+  # first: that store is in-memory, so secrets created through the portal do
+  # NOT survive an OpenBao restart.
+  secretManagement:
+    enabled: true
+
+controllerManager:
+  # Explicit rather than inherited. The controller-manager runs the CRD
+  # admission webhooks; a second replica on one node buys a leader election
+  # and nothing else.
+  replicas: 1
+
+openchoreoApi:
+  replicas: 1
+  http:
+    hostnames:
+      - api.openchoreo.ash4d.com
+  config:
+    server:
+      # Browser- and CLI-facing, so https and no port — Traefik terminates on
+      # 443. Upstream has http://...:8080 because k3d maps the gateway to a
+      # host port. Getting this wrong does not break the API; it breaks the
+      # URLs the API hands back to the CLI and the portal.
+      publicUrl: "https://api.openchoreo.ash4d.com"
+
+backstage:
+  replicas: 1
+  # Materialised by the ExternalSecret in ../control-plane-extras/ from the
+  # five backstage-* keys seeded in ../openbao/values.yaml. The chart's
+  # validate.yaml FAILS THE RENDER if this is empty, so this bundle cannot be
+  # enabled before that one.
+  secretName: backstage-secrets
+  baseUrl: "https://openchoreo.ash4d.com"
+  http:
+    hostnames:
+      - openchoreo.ash4d.com
+  # The chart defaults Backstage to a 2 CPU / 2 GiB limit. It is a Node app
+  # serving a handful of lab users; trimmed so it is not the largest single
+  # limit in this half of the node.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  database:
+    type: sqlite
+    sqlite:
+      persistence:
+        # Backstage's SQLite is a CACHE of the catalog, rebuilt from the
+        # OpenChoreo API every `catalogSync.frequency` (300s). Losing it on a
+        # restart costs one resync, not data — so no PVC, matching upstream.
+        # Contrast ../thunder/, where SQLite IS the source of truth and the
+        # same choice has real consequences (see that bundle's fleet.yaml).
+        enabled: false
+
+gateway:
+  # Standard ports, unlike upstream's 8080/8443. Those exist because k3d
+  # publishes the gateway on host ports; here the Service is ClusterIP behind
+  # Traefik (../kgateway-params/) and there is nothing to avoid colliding with.
+  httpPort: 80
+  httpsPort: 443
+  # TLS OFF AT THE GATEWAY, ON AT TRAEFIK. Not a downgrade: Traefik holds the
+  # letsencrypt-dns certificate for all three hosts
+  # (../control-plane-extras/certificate.yaml) and forwards over ClusterIP
+  # inside the node. Enabling it would mean a second certificate for the same
+  # names, and two cert-manager Certificates racing on the same
+  # _acme-challenge TXT record — the failure 17-buzz/fleet.yaml documents.
+  tls:
+    enabled: false
+
+# Disabled: it wants an LLM endpoint and a `portalAssistant.llm.secretName`
+# that nothing here seeds. The lab does have ollama reachable at
+# ollama-exporter.ai.svc.cluster.local:9401, so this is a plausible follow-up —
+# left off until that is deliberate work rather than a default that quietly
+# fails readiness.
+portalAssistant:
+  enabled: false

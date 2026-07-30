@@ -1,0 +1,39 @@
+# Fleet bundle — shared GatewayParameters for the kgateway GatewayClass
+# (raw manifest). OpenChoreo prerequisite 3.5 of 4.
+#
+# THIS BUNDLE EXISTS FOR ONE REASON: to stop the three OpenChoreo Gateways
+# from consuming three MetalLB IPs.
+#
+# kgateway provisions a Deployment and a Service for every Gateway object, and
+# that Service defaults to type LoadBalancer. OpenChoreo creates one Gateway
+# per plane — control (../control-plane/), data (../data-plane/) and
+# observability (../observability-plane/) — so the default behaviour would
+# claim three addresses out of the `lan-pool` 192.168.7.150-169, which had
+# exactly five free when this bundle was written. It would also be pointless:
+# DNS for openchoreo.ash4d.com, api.openchoreo.ash4d.com and thunder.ash4d.com
+# already points at 192.168.7.150, the Traefik LoadBalancer, so traffic
+# arrives through Traefik and reaches these Gateways over ClusterIP. See
+# ../control-plane-extras/ingress.yaml for the other half of that path.
+#
+# The object below is referenced class-wide, not per-Gateway:
+# ../kgateway/values.yaml sets `gatewayClassParametersRefs.kgateway` to point
+# the `kgateway` GatewayClass at it, so all three Gateways inherit ClusterIP
+# without any of the three OpenChoreo charts needing a `gateway.infrastructure`
+# override. One object, one place to change it.
+#
+# ORDERING: needs the GatewayParameters CRD from ../kgateway-crds/, and must
+# exist before ../kgateway/ reconciles the GatewayClass. Enable in that order.
+# A missing referent does not wedge anything permanently — kgateway retries —
+# but the Gateways come up as LoadBalancer in the meantime and take the IPs
+# this bundle exists to protect.
+defaultNamespace: openchoreo-control-plane
+
+# Raw-manifest bundle, but Fleet still deploys it via Helm internally — so
+# adopting objects that are already on the cluster needs takeOwnership.
+# Without it the first sync fails: live objects carry no
+# meta.helm.sh/release-name annotation and Helm refuses to touch resources it
+# does not believe it owns. Nothing pre-exists here, so this is a no-op on
+# first sync — kept for convention and to protect a future re-adopt after a
+# manual `kubectl apply`.
+helm:
+  takeOwnership: true

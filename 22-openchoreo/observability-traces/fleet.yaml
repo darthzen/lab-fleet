@@ -1,0 +1,31 @@
+# Fleet bundle — distributed traces: OTel collector into OpenSearch (Helm).
+#
+# An OpenTelemetry collector with tail sampling, writing spans into the SAME
+# OpenSearch instance that ../observability-logs/ runs, plus an adapter the
+# observer queries.
+#
+# Chart 0.5.0 — OpenChoreo v1.2's installer pin. Versioned independently of
+# the planes (1.2.1); see ../observability-logs/fleet.yaml.
+#
+# 🔴 REQUIRES ../observability-logs/ TO BE LIVE FIRST. values.yaml sets
+# `openSearch.enabled: false`, exactly as upstream's installer does with
+# `--set openSearch.enabled=false`, so this chart brings NO OpenSearch of its
+# own and writes into the logs one. Enabling this first gives you a collector
+# with nowhere to write. Do not "fix" a failing trace pipeline by turning that
+# flag on — that would start a second OpenSearch JVM on a node that cannot
+# afford the first one twice.
+#
+# PREREQUISITE: `opensearch-admin-credentials` from ../observability-extras/.
+#
+# The cheapest observability module to skip if the node runs short: traces are
+# only produced by workloads that emit them, so on a lab with no instrumented
+# services this collects almost nothing while still costing a collector pod.
+# Enable it when there is something to trace.
+defaultNamespace: openchoreo-observability-plane
+helm:
+  releaseName: observability-traces-opensearch
+  chart: oci://ghcr.io/openchoreo/helm-charts/observability-tracing-opensearch
+  version: "0.5.0"
+  valuesFiles:
+    - values.yaml
+  takeOwnership: true

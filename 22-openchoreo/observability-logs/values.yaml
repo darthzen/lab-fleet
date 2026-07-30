@@ -1,0 +1,83 @@
+# Container logs — OpenSearch, fluent-bit and the observer's log adapter.
+#
+# Upstream's installer passes only the two secret-name flags and then does a
+# second `helm upgrade --reuse-values --set fluent-bit.enabled=true` to turn
+# fluent-bit on after OpenSearch is up. That two-pass dance exists because the
+# installer is a shell script; Fleet reconciles continuously, so fluent-bit is
+# simply enabled here and retries until OpenSearch answers.
+
+# Referenced by name from ../observability-extras/externalsecrets.yaml. Both
+# the setup Job and the query adapter authenticate with it.
+openSearchSetup:
+  openSearchSecretName: opensearch-admin-credentials
+  dataRetentionTime:
+    # 30d is upstream's default and it is a real disk commitment on a shared
+    # Longhorn pool (428 GiB available of 1049 GiB on 2026-07-30). Cut to 7d:
+    # this is a lab whose logs are for debugging a deploy that just happened,
+    # not for compliance. Raising it later is a values change; recovering the
+    # disk after it fills is not.
+    containerLogs: 7d
+    k8sEvents: 7d
+
+adapter:
+  openSearchSecretName: opensearch-admin-credentials
+
+openSearch:
+  # ONE node, not the subchart's default of three. `singleNode: true` is
+  # already upstream's setting here and it is load-bearing on this cluster:
+  # three OpenSearch replicas on one Kubernetes node would be three JVMs
+  # competing for the same RAM to provide redundancy that a single node cannot
+  # deliver anyway.
+  singleNode: true
+  replicas: 1
+
+  # 🔴 SEEDS THE SECURITY INDEX ON FIRST START ONLY. This value must equal the
+  # `opensearch-password` seed in ../openbao/values.yaml, which is what
+  # ../observability-extras/ hands to every client. Changing it later does NOT
+  # change what OpenSearch accepts — see the warning in that file. This is an
+  # upstream fixture credential; the same reasoning as ../thunder/values.yaml
+  # applies (LAN-only, rotate deliberately, README.md).
+  extraEnvs:
+    - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
+      value: ThisIsTheOpenSearchPassword1
+
+  # The subchart requests 1000m CPU and no memory at all by default. On a
+  # 16-thread node already at ~50% CPU requests that single request is 6% of
+  # the box reserved for an idle JVM, and the missing memory request means the
+  # scheduler cannot account for the largest consumer here. Both corrected.
+  resources:
+    requests:
+      cpu: 200m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+  # Heap. The subchart default is -Xmx512M, which is fine for the volume this
+  # lab produces and deliberately left well under the 2Gi limit — OpenSearch
+  # needs off-heap room for Lucene, and a heap sized close to the container
+  # limit is the classic way to get OOMKilled instead of GC pressure.
+  opensearchJavaOpts: "-Xmx512M -Xms512M"
+
+  persistence:
+    enabled: true
+    # Explicit because this cluster has TWO default StorageClasses —
+    # `local-path` and `longhorn` are both marked default (observed
+    # 2026-07-30) — so an unset class is genuinely ambiguous here.
+    storageClass: longhorn
+    # 8Gi is the subchart default and is right for 7d retention at lab volume.
+    # Longhorn expands online if it turns out not to be.
+    size: 8Gi
+
+fluent-bit:
+  # On, in one pass — see the header. Tails every container on the node, so
+  # this is also the component that makes OpenChoreo's log panels show logs
+  # from workloads that have nothing to do with OpenChoreo.
+  enabled: true
+  resources:
+    requests:
+      cpu: 25m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
