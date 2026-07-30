@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "6c538e076242",
+  "strategy": "manual-commit",
+  "branch": "fleet-unvendor-buzz",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "14-cluster-mgmt/FLEET-WIRING.md",
+    "17-buzz/fleet.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/6c/538e076242/0/metadata.json",
+      "transcript": "/6c/538e076242/0/full.jsonl",
+      "compact_transcript": "/6c/538e076242/0/transcript.jsonl",
+      "content_hash": "/6c/538e076242/0/content_hash.txt",
+      "prompt": "/6c/538e076242/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 68,
+    "cache_creation_tokens": 54656,
+    "cache_read_tokens": 13017533,
+    "output_tokens": 32795,
+    "api_call_count": 38
+  }
+}

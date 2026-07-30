@@ -1,0 +1,5 @@
+The Ash4d Lab project was used to deploy at least karakeep, if not the harbor and cert-manager as well. It's root is ~/Dropbox/Claudd Cowork/Job Search/_portfolio/ Look there and see if you can find the helm commands used to install those.
+
+---
+
+retry
