@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "d69a4a91bb30",
+  "strategy": "manual-commit",
+  "branch": "openchoreo-rollout-complete",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "14-cluster-mgmt/FLEET-WIRING.md",
+    "14-cluster-mgmt/gitrepos/lab-openchoreo.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d6/9a4a91bb30/0/metadata.json",
+      "transcript": "/d6/9a4a91bb30/0/full.jsonl",
+      "compact_transcript": "/d6/9a4a91bb30/0/transcript.jsonl",
+      "content_hash": "/d6/9a4a91bb30/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 35,
+    "cache_creation_tokens": 17566,
+    "cache_read_tokens": 3345418,
+    "output_tokens": 12359,
+    "api_call_count": 19
+  }
+}
