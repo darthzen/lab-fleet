@@ -21,6 +21,11 @@
 # installer, which passes it as an inline `-f -` heredoc rather than shipping
 # a values file. It is reproduced here so the configuration is reviewable in
 # git instead of living in a shell script nobody runs.
+#
+# disablePreProcess IS REQUIRED. values.yaml uses the OTel collector's own
+# `${env:OPENSEARCH_USERNAME}` expansion syntax, which collides with Fleet's
+# `${` `}` value templating — Fleet reads `env:` as an undefined template
+# function and the bundle fails to target. Same reason as ../thunder/.
 defaultNamespace: openchoreo-observability-plane
 helm:
   releaseName: observability-events-otel-collector
@@ -29,3 +34,4 @@ helm:
   valuesFiles:
     - values.yaml
   takeOwnership: true
+  disablePreProcess: true

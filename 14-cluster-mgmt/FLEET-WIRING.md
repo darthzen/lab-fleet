@@ -227,6 +227,26 @@ detail in `22-openchoreo/README.md`; the parts that generalise beyond it:
 
 ## Watch-outs
 
+- **A `${...}` anywhere in a values file is a Fleet template, and a bundle that
+  contains one fails to *target* — it never reaches the cluster.** Fleet
+  pre-processes helm values as a Go template with `${` `}` delimiters, so any
+  shell expansion (`${THUNDER_URL}`), OTel collector reference
+  (`${env:OPENSEARCH_USERNAME}`) or `envsubst` placeholder that survives from an
+  upstream fixture gets read as a template function call. The failure is a
+  `targeting error` on the GitRepo, not a deploy error:
+
+  ```
+  failed to parse helm values template: template: values:10: function "THUNDER_URL" not defined
+  ```
+
+  Fix is `helm.disablePreProcess: true` in that bundle's `fleet.yaml`. Cost is
+  nil unless the bundle actually uses `${ .ClusterName }`-style Fleet
+  templating — none here do. Hit `22-openchoreo/thunder` (34 KB embedded
+  bootstrap script, 61 expansions) and pre-empted on
+  `22-openchoreo/observability-events`. **Grep `\${` across a vendored values
+  file before enabling its path** — `helm template` does not catch this,
+  because the collision is with Fleet, not Helm.
+
 - **Helm adoption is the real hazard, and `helm get values` will not show it.**
   Two releases had drift in the *rendered objects* while their user-supplied
   values looked clean, because someone had edited the live object directly:
