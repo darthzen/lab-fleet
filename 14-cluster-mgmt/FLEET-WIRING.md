@@ -554,7 +554,7 @@ Live state after this session — every BundleDeployment `ready=true`:
 | `lab-ash4d-origin` | `16-ash4d-origin` | ✅ pod UID + startTime unchanged — true no-op |
 | `lab-openshell` | `20-openshell` | ✅ pod unchanged; adopted existing release (rev 3 → 4) |
 | `lab-buzz` | `17-buzz` + nested `/minio` | ✅ all 4 pods unchanged; release 7 → 11. Reported `Modified` until the redis `maxUnavailable` fix |
-| `lab-lab-memory` | `18-lab-memory/raw` **only** | ⚠️ raw OK. **karakeep NOT adopted** — see below |
+| `lab-lab-memory` | `18-lab-memory` + nested `/raw` | ✅ adopted on the second attempt via the SSA handoff — zero pod restarts, see below |
 | `lab-ai` | + `09-mcp/ollama-code` | ✅ migration done, `ollama-code` namespace deleted |
 | `lab-cert-manager` | `15-cert-manager` + nested `/issuer` | ✅ adopted after an SSA ownership handoff; controller rolled once, all 9 Certificates stayed Ready |
 
@@ -594,10 +594,30 @@ kept their original UIDs, the DNS-01 args survived Fleet taking over, and all 9
 Certificates plus the ClusterIssuer and 6 CRDs came through untouched. Full
 procedure in the `kubectl diff` watch-out.
 
-**karakeep is the one still unadopted.** Its conflict list includes
-`.spec.volumeClaimTemplates` on a StatefulSet holding real data, so it needs the
-same handoff done deliberately with the Secrets backed up first — see the
-re-adoption steps below.
+**karakeep was then adopted too, cleanly.** Two things made the second attempt a
+true no-op where the first destroyed it:
+
+1. The accidental reinstall had applied the chart's own render, so live *was* the
+   render. `kubectl diff` (step 3 of the procedure) came back completely empty —
+   the 14 conflicts were pure ownership with zero value differences. The
+   cosmetic mismatches that caused the original failure (hand-added `OCR_USE_LLM`
+   ordering, `cpu: 1` vs `1000m`) had been normalised away.
+2. `deploy/secrets.env` had been restored first, so the credentials were no
+   longer single-copy.
+
+Result: all 10 objects handed to `fleetagent`, **every pod UID unchanged**, both
+PVCs still bound to their original volumes, both Secrets still at their original
+`resourceVersion` (never rotated at any point today), `/api/health` 200, and the
+search index intact at 120 documents.
+
+**Mid-way mistake worth recording:** re-applying every GitRepo file to add
+`pollingInterval` silently reset `lab-lab-memory`'s `spec.paths` from the
+narrowed `18-lab-memory/raw` back to the file's `18-lab-memory`, restarting the
+failing karakeep retry loop (release reached revision 8, all failed). Nothing
+broke, because this time the loop was stopped with `spec.paused: true` rather
+than by removing the path. **A GitRepo file is the source of truth for
+`spec.paths`** — if the live value has been narrowed by hand, re-applying the
+file undoes that. Narrow the file too, or expect the reset.
 
 Everything below this line was written before adoption and describes the
 pre-flight, which remains accurate.
