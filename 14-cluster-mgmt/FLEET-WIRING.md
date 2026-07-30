@@ -81,12 +81,12 @@ targets:
         ash4d-lab: ""
 ```
 
-## 🛑 BLOCKER — fleet-agent registration is broken
+## ✅ RESOLVED — fleet-agent registration (was blocking everything)
 
-Found 2026-07-29 while applying the first GitRepo. **Fleet cannot deploy anything
-to this cluster until this is fixed.** Bundles reach `WaitApplied` and sit there;
-the BundleDeployment gets no status at all, because the downstream agent never
-picks it up.
+Found 2026-07-29 while applying the first GitRepo, **fixed the same day** with
+Option A below. Symptom: bundles reached `WaitApplied` and sat there, with the
+BundleDeployment getting no status at all, because the downstream agent never
+picked it up.
 
 ```
 Failed to register agent: registration failed: cannot create clusterregistration
@@ -123,13 +123,25 @@ redeploy their bootstrap config afterwards.
 **B — populate `apiServerCA`** with the Let's Encrypt chain and keep `strict`.
 Scoped to this cluster, but must be redone whenever the issuing CA rotates.
 
-A is the better fit here; B is the choice if some other downstream depends on
-strict mode. **Not applied — this is a controller-wide setting on a separate
-host, so it needs a deliberate call.**
+**Option A was applied 2026-07-29.** Note the original value was `""` (empty,
+inheriting `default: strict`), so the exact rollback is `value: ""` — not
+`"strict"`:
 
-Worth noting the other downstream (`cluster-ee8f7993b3a6`) last checked in
-2026-07-17, the same day the Rancher cert was renewed. It may be broken for the
-same reason, which would make A a fix for both.
+```bash
+kubectl --context rancher patch settings.management.cattle.io agent-tls-mode \
+  --type=merge -p '{"value":""}'
+```
+
+What happened after the patch: Rancher deleted and recreated the fleet-agent
+Deployment, the new pod waited out the previous leader lease (~30s), then
+registered — creating the `fleet-agent` Secret and populating
+`status.agent.lastSeen`. `c-nnzn9` went to 2/2 bundles ready. Total time about
+two minutes; **no workload on sdf1 was touched.**
+
+One prediction that did **not** hold: the other downstream
+(`cluster-ee8f7993b3a6`) last checked in 2026-07-17 and was still stuck there
+afterwards, so its staleness is a separate problem — most likely that host being
+offline, not TLS mode. Worth a look, but unrelated to this cluster.
 
 ## ⏭ Phase 2/3 — GitRepos + staged rollout (approve each widen)
 
@@ -226,6 +238,33 @@ The old note said to run `kubectl -n cattle-fleet-system get bundledeployments`
 **downstream** — that fails here (`the server doesn't have a resource type
 "bundledeployments"`), because this Fleet version keeps BundleDeployments on the
 controller in the per-cluster namespace shown above.
+
+## Adoption log
+
+`2026-07-29` — **`lab-node-red` adopted. Verified no-op.** First namespace on
+Fleet. Evidence, before vs after:
+
+| Check | Before | After |
+|---|---|---|
+| Pod name / UID | `node-red-fbdd4f8fd-q2jbt` / `42e62d04…` | **identical** |
+| Pod startTime | 2026-07-20T18:49:13Z | **identical** (never restarted) |
+| Restart count | 0 | **0** |
+| ReplicaSets | `node-red-fbdd4f8fd` only | **same one only** |
+| Rollout revision | 1 | **1** (no new rollout) |
+| `kubectl diff` vs repo | clean | **clean** |
+| Helm ownership | none | `release=lab-node-red-12-node-red` |
+| BundleDeployment | — | `ready=true`, `nonModified=true` |
+
+`metadata.generation` did go 2 → 3, which normally indicates a spec write. It was
+Helm rewriting the spec to identical values: the pod-template hash is unchanged,
+no second ReplicaSet was created, rollout history stayed at revision 1, and the
+pod is the original one from ten days earlier. So the bump is real but inert —
+expect it on every adopted Deployment, and do not read it as a restart.
+
+Remaining namespaces, in order: `lab-emby`, `lab-resilio`, `lab-hermes` (needs
+the `hermes-webui` Secret first), `lab-ai` (eight paths, one at a time),
+`lab-metallb-system`, `lab-nvidia-device-plugin`,
+`lab-cattle-monitoring-system`, then `lab-longhorn-system` last.
 
 ## Drift reconciliation log
 

@@ -54,14 +54,23 @@ itself does not change.
 and verified — it makes Fleet revert out-of-band `kubectl edit`s, which is the
 goal eventually but will fight this cluster's hand-tuning habits.
 
+## Status
+
+| GitRepo | State |
+|---|---|
+| `lab-node-red` | ✅ **adopted 2026-07-29** — verified no-op, no pod restart |
+| everything else | not yet applied |
+
 ## Prerequisite: the fleet-agent must be able to register
 
-As of 2026-07-29 it cannot, so **no GitRepo can deploy anything yet**. See the
-"fleet-agent registration is broken" section in `../FLEET-WIRING.md`. Verify
-first:
+This blocked everything until 2026-07-29 (`agent-tls-mode` was `strict` with an
+empty `apiServerCA`); see `../FLEET-WIRING.md`. If bundles ever sit in
+`WaitApplied` with an empty BundleDeployment status again, check this first —
+note the resource must be fully qualified, or `cluster` resolves to
+`clusters.cluster.x-k8s.io` and returns a confusing NotFound:
 
-    kubectl --context rancher -n fleet-default get cluster c-nnzn9 \
+    kubectl --context rancher -n fleet-default get clusters.fleet.cattle.io c-nnzn9 \
       -o jsonpath='{.status.agent.lastSeen}'
 
-An empty result means the agent has never checked in and bundles will sit in
-`WaitApplied` forever.
+An empty or `null` result means the agent has never checked in, and bundles will
+sit in `WaitApplied` forever.
