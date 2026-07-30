@@ -1,0 +1,1 @@
+pr is merged and kubectl command is already executed
