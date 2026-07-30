@@ -1,4 +1,6 @@
 # lab-fleet — Home Lab Cluster Configuration as Code
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fdarthzen%2Flab-fleet.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fdarthzen%2Flab-fleet?ref=badge_shield)
+
 
 The complete, install-ordered configuration of a single-node k3s cluster running a private AI platform: local LLM inference on a Tesla V100, RAG over Milvus, agentic MCP tooling, GPU image generation, and the home services that share the node. Every file was curated from **live cluster state** — helm values pulled from running releases, manifests reconstructed from applied objects, and application sources recovered from container image layers after their Dockerfiles were lost.
 
@@ -113,3 +115,7 @@ Configuration was captured from the running cluster rather than from build-time 
 ## About
 
 Built by [Rick Ashford](https://www.linkedin.com/in/rickashford/) — Sales Engineering leader with 17 years at SUSE, specializing in Kubernetes, Linux, AI/LLM platforms, and open-source ecosystem strategy.
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fdarthzen%2Flab-fleet.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fdarthzen%2Flab-fleet?ref=badge_large)
