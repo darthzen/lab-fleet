@@ -1,0 +1,35 @@
+# ONE-TIME BOOTSTRAP — not part of the bundle.
+#
+# Renamed to .txt so Fleet never applies it, the same convention as
+# 09-mcp/github-mcp-token.secret.example.yaml.txt.
+#
+# This Job creates the buzz-media bucket. It does NOT exist on the cluster
+# (it ran once and was reaped), so committing it as a live manifest would
+# make Fleet CREATE it -- not a no-op. Jobs are also near-immutable, so a
+# Job inside a synced bundle fights Fleet on every subsequent change.
+#
+# Run by hand if the bucket ever needs recreating:
+#   kubectl -n buzz create -f buzz-minio-mkbucket.job.yaml.txt
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: buzz-minio-mkbucket
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: mc
+        image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+        envFrom:
+        - secretRef:
+            name: buzz-minio-root
+        command:
+        - /bin/sh
+        - -c
+        args:
+        - "set -e\nuntil mc alias set buzz http://buzz-minio:9000 \\\n      \"$MINIO_ROOT_USER\"\
+          \ \"$MINIO_ROOT_PASSWORD\"; do\n  echo \"waiting for minio...\"; sleep 3\n\
+          done\nmc mb --ignore-existing buzz/buzz-media\nmc ls buzz\n"

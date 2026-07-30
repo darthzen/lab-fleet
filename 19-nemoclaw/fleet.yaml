@@ -1,0 +1,42 @@
+# Fleet bundle — NemoClaw ops-agent scaffolding (raw manifests).
+#
+# This bundle is scaffolding only: two Namespaces, two ServiceAccounts with
+# their ClusterRoles/Bindings, the audit PVC, and the NetworkPolicy set.
+# There are NO Deployments, StatefulSets or CronJobs here — the agent itself
+# is not running yet. That makes this the lowest-risk adoption in the repo:
+# there is no pod template to perturb, so it cannot restart anything.
+# Adopt it first.
+#
+# Creates BOTH `nemoclaw` and `nemoclaw-sandboxes`. Those are two namespaces
+# under one GitRepo, which departs from the one-GitRepo-per-namespace rule —
+# deliberately, because `nemoclaw-sandboxes` is created by this bundle rather
+# than being an independent concern.
+#
+# ORDERING CONSTRAINT: the openshell chart (20-openshell) renders a
+# ServiceAccount, Role, RoleBinding and NetworkPolicy INTO nemoclaw-sandboxes.
+# This bundle must be adopted before that one, or openshell has no namespace
+# to write into. The two are not independently removable.
+#
+# The netpol set references namespaces `openshell`, `ai` and `kube-system` by
+# label selector only. Those are ordinary selectors, not hard dependencies —
+# the policies apply whether or not the target namespaces are Fleet-managed.
+#
+# Deliberately NOT vendored from the nemoclaw-ops-agent repo:
+#   - deploy/audit/audit-record.schema.json — Fleet applies *.json as a
+#     manifest, so a JSON Schema file in a bundle path breaks the whole
+#     bundle with "Object 'Kind' is missing". It is app documentation and
+#     belongs in its own repo.
+#   - deploy/rbac/TESTS.md, deploy/README.md, deploy/openshell/ — docs and
+#     the openshell values, which live in 20-openshell instead.
+#   - build-plan/tools (a git submodule of darthzen/agent-build-tools) — build
+#     tooling, not cluster state.
+defaultNamespace: nemoclaw
+
+# Raw-manifest bundle, but Fleet still deploys it via Helm internally — so
+# adopting the objects that are already on the cluster needs takeOwnership.
+# Without it the first sync fails: the live objects carry no
+# meta.helm.sh/release-name annotation, and Helm refuses to touch resources it
+# does not believe it owns. With it, adoption is metadata-only (Helm labels on
+# the top-level objects), so no pod template changes and no restarts.
+helm:
+  takeOwnership: true

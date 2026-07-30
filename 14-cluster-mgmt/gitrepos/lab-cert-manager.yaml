@@ -1,0 +1,57 @@
+# Fleet GitRepo — cert-manager namespace.
+#
+# This is the Fleet `GitRepo` CUSTOM RESOURCE (gitrepos.fleet.cattle.io), not a
+# git repository: it points Fleet at the existing lab-fleet repo and tells it
+# which paths to render. It lives on the RANCHER CONTROLLER
+# (192.168.7.148, kubectl context `rancher`), so it is not part of any bundle here.
+#
+#   kubectl --context rancher apply -f 14-cluster-mgmt/gitrepos/lab-cert-manager.yaml
+#
+# One GitRepo per namespace — see gitrepos/README.md.
+#
+# HIGHEST RISK IN THIS BATCH, and the reason it is adopted LAST despite
+# being a platform component. It issues every TLS certificate in the
+# cluster (8 Certificates across ai, hermes, lab-memory, ollama-code,
+# registry) and this bundle OWNS the 6 cert-manager CRDs. Deleting this
+# GitRepo would delete the CRDs and with them every Certificate, Issuer
+# and Order in the cluster. Roll back by removing the path, never by
+# deleting the GitRepo.
+#
+# Adoption restarts the cert-manager controller pod once (arg ORDER
+# differs; the arg set is identical). Read 15-cert-manager/values.yaml
+# first — it carries two DNS-01 flags that exist only on the live object,
+# and adopting without them is a delayed cluster-wide cert outage.
+#
+# PREREQUISITE SECRET: cloudflare-api-token in the cert-manager namespace.
+#
+# STAGED: this file carries ONLY `15-cert-manager`, so applying it is a single
+# adoption step and stays idempotent. `15-cert-manager/issuer` is deliberately left
+# out — see gitrepos/README.md on why a GitRepo file must never hold more
+# than one unadopted path. Add the second path after the first is verified
+# Ready:
+#
+#   kubectl --context rancher -n fleet-default patch gitrepo lab-cert-manager \
+#     --type=merge -p '{"spec":{"paths":["15-cert-manager","15-cert-manager/issuer"]}}'
+apiVersion: fleet.cattle.io/v1alpha1
+kind: GitRepo
+metadata:
+  name: lab-cert-manager
+  namespace: fleet-default
+spec:
+  repo: https://github.com/darthzen/lab-fleet
+  branch: main
+  paths:
+    - 15-cert-manager
+  # `ash4d-lab` is a bespoke label already on the sdf1 cluster (c-nnzn9). Chosen
+  # over management.cattle.io/cluster-name, which Rancher owns and may rewrite.
+  # Do NOT reuse site=ash4d — that belongs to the ash4d-site GitRepo and resolves
+  # to a different downstream cluster.
+  targets:
+    - clusterSelector:
+        matchLabels:
+          ash4d-lab: ""
+  # correctDrift OFF until every namespace is adopted and verified. Turning it on
+  # makes Fleet revert out-of-band `kubectl edit`s — the eventual goal, but it
+  # will fight this cluster's hand-tuning habits (GPU pins, context sizes).
+  correctDrift:
+    enabled: false

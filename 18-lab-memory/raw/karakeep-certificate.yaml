@@ -1,0 +1,12 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: karakeep-ash4d-tls
+  namespace: lab-memory
+spec:
+  secretName: karakeep-ash4d-tls
+  issuerRef:
+    name: letsencrypt-dns
+    kind: ClusterIssuer
+  dnsNames:
+    - karakeep.ash4d.com

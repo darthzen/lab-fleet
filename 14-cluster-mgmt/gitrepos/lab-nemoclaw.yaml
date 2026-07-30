@@ -1,0 +1,48 @@
+# Fleet GitRepo — nemoclaw namespace.
+#
+# This is the Fleet `GitRepo` CUSTOM RESOURCE (gitrepos.fleet.cattle.io), not a
+# git repository: it points Fleet at the existing lab-fleet repo and tells it
+# which paths to render. It lives on the RANCHER CONTROLLER
+# (192.168.7.148, kubectl context `rancher`), so it is not part of any bundle here.
+#
+#   kubectl --context rancher apply -f 14-cluster-mgmt/gitrepos/lab-nemoclaw.yaml
+#
+# One GitRepo per namespace — see gitrepos/README.md.
+#
+# LOWEST RISK IN THE WHOLE REPO — adopt this one FIRST. The bundle is
+# Namespaces, ServiceAccounts, RBAC, NetworkPolicies and one PVC. There
+# are no Deployments, StatefulSets or CronJobs, so there is no pod
+# template to perturb and nothing can restart. Verified
+# `kubectl diff`-clean across the whole bundle.
+#
+# COVERS TWO NAMESPACES (`nemoclaw` and `nemoclaw-sandboxes`), departing
+# from one-GitRepo-per-namespace on purpose: this bundle CREATES
+# nemoclaw-sandboxes, so it is not an independent concern.
+#
+# Must be adopted BEFORE lab-openshell, whose chart renders four objects
+# into nemoclaw-sandboxes.
+#
+# Single path — nothing staged.
+apiVersion: fleet.cattle.io/v1alpha1
+kind: GitRepo
+metadata:
+  name: lab-nemoclaw
+  namespace: fleet-default
+spec:
+  repo: https://github.com/darthzen/lab-fleet
+  branch: main
+  paths:
+    - 19-nemoclaw
+  # `ash4d-lab` is a bespoke label already on the sdf1 cluster (c-nnzn9). Chosen
+  # over management.cattle.io/cluster-name, which Rancher owns and may rewrite.
+  # Do NOT reuse site=ash4d — that belongs to the ash4d-site GitRepo and resolves
+  # to a different downstream cluster.
+  targets:
+    - clusterSelector:
+        matchLabels:
+          ash4d-lab: ""
+  # correctDrift OFF until every namespace is adopted and verified. Turning it on
+  # makes Fleet revert out-of-band `kubectl edit`s — the eventual goal, but it
+  # will fight this cluster's hand-tuning habits (GPU pins, context sizes).
+  correctDrift:
+    enabled: false

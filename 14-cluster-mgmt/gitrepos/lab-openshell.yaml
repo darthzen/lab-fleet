@@ -1,0 +1,50 @@
+# Fleet GitRepo — openshell namespace.
+#
+# This is the Fleet `GitRepo` CUSTOM RESOURCE (gitrepos.fleet.cattle.io), not a
+# git repository: it points Fleet at the existing lab-fleet repo and tells it
+# which paths to render. It lives on the RANCHER CONTROLLER
+# (192.168.7.148, kubectl context `rancher`), so it is not part of any bundle here.
+#
+#   kubectl --context rancher apply -f 14-cluster-mgmt/gitrepos/lab-openshell.yaml
+#
+# One GitRepo per namespace — see gitrepos/README.md.
+#
+# MED RISK. The chart is VENDORED, and that is not a stylistic choice:
+# upstream publishes only the MUTABLE tag `0.0.0-dev`, which has ALREADY
+# drifted from the running release. Pinning that tag would silently
+# upgrade openshell instead of adopting it. See 20-openshell/fleet.yaml.
+# Verified: the vendored chart renders identically to live.
+#
+# ADOPT AFTER lab-nemoclaw. This chart writes a ServiceAccount, Role,
+# RoleBinding and NetworkPolicy into the `nemoclaw-sandboxes` namespace,
+# which lab-nemoclaw creates. It also owns a cluster-scoped
+# ClusterRole/ClusterRoleBinding pair (openshell-node-reader).
+#
+# values.yaml came from the live release, NOT from the nemoclaw-ops-agent
+# repo's deploy/openshell/values.yaml — those disagree on
+# sandboxNamespace and the repo copy is stale.
+#
+# Single path — nothing staged.
+apiVersion: fleet.cattle.io/v1alpha1
+kind: GitRepo
+metadata:
+  name: lab-openshell
+  namespace: fleet-default
+spec:
+  repo: https://github.com/darthzen/lab-fleet
+  branch: main
+  paths:
+    - 20-openshell
+  # `ash4d-lab` is a bespoke label already on the sdf1 cluster (c-nnzn9). Chosen
+  # over management.cattle.io/cluster-name, which Rancher owns and may rewrite.
+  # Do NOT reuse site=ash4d — that belongs to the ash4d-site GitRepo and resolves
+  # to a different downstream cluster.
+  targets:
+    - clusterSelector:
+        matchLabels:
+          ash4d-lab: ""
+  # correctDrift OFF until every namespace is adopted and verified. Turning it on
+  # makes Fleet revert out-of-band `kubectl edit`s — the eventual goal, but it
+  # will fight this cluster's hand-tuning habits (GPU pins, context sizes).
+  correctDrift:
+    enabled: false

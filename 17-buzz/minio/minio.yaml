@@ -1,0 +1,98 @@
+# Standalone MinIO for buzz object storage. The buzz chart's own
+# bundled minio subchart is disabled (minio.enabled: false) because it is
+# eval-only; this is the real one. Reconstructed from buzz-relay/minio.yaml.
+#
+# The Namespace object from that file is deliberately dropped: Fleet creates
+# the namespace from defaultNamespace, and two bundles declaring the same
+# cluster-scoped Namespace would contend for it.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: buzz-minio-data
+spec:
+  storageClassName: longhorn
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: buzz-minio
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: buzz-minio
+  template:
+    metadata:
+      labels:
+        app: buzz-minio
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: minio
+        image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+        args:
+        - server
+        - /data
+        - --console-address
+        - :9001
+        envFrom:
+        - secretRef:
+            name: buzz-minio-root
+        ports:
+        - name: s3
+          containerPort: 9000
+        - name: console
+          containerPort: 9001
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        livenessProbe:
+          httpGet:
+            path: /minio/health/live
+            port: s3
+          initialDelaySeconds: 10
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /minio/health/ready
+            port: s3
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: '1'
+            memory: 1Gi
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: buzz-minio-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: buzz-minio
+spec:
+  type: ClusterIP
+  selector:
+    app: buzz-minio
+  ports:
+  - name: s3
+    port: 9000
+    targetPort: s3
+  - name: console
+    port: 9001
+    targetPort: console

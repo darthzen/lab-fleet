@@ -1,0 +1,27 @@
+# ClusterIssuer for every ash4d.com certificate in the cluster.
+#
+# ACME DNS-01 via Cloudflare. Cluster-scoped, so it is reachable from any
+# namespace -- ai, hermes, lab-memory, registry and ollama-code all point
+# their Certificates here.
+#
+# PREREQUISITE SECRET: cloudflare-api-token (key: api-token) in the
+# cert-manager namespace. It is NOT in this repo and must exist before this
+# path is enabled, or every issuance fails at the DNS-01 step.
+# letsencrypt-dns-account-key is created by cert-manager itself; do not
+# declare it.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-dns
+spec:
+  acme:
+    email: rick@theashfords.org
+    privateKeySecretRef:
+      name: letsencrypt-dns-account-key
+    server: https://acme-v02.api.letsencrypt.org/directory
+    solvers:
+    - dns01:
+        cloudflare:
+          apiTokenSecretRef:
+            key: api-token
+            name: cloudflare-api-token

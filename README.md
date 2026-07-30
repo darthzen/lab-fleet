@@ -41,8 +41,23 @@ flowchart TD
         RANCHER[Rancher downstream<br/>Fleet · Monitoring]
     end
 
+    subgraph pki["15 — PKI"]
+        CERTMGR[15 cert-manager<br/>letsencrypt-dns DNS-01]
+    end
+
+    subgraph more["16-20 — Applications"]
+        ORIGIN[16 ash4d.com origin]
+        BUZZ[17 Buzz relay<br/>+ MinIO]
+        MEMORY[18 lab-memory<br/>Karakeep + MCP]
+        NEMO[19 NemoClaw<br/>RBAC · netpol]
+        OPENSHELL[20 OpenShell<br/>agent gateway]
+    end
+
     host --> platform --> ai --> apps
     platform --> mgmt
+    platform --> pki
+    pki --> more
+    NEMO --> OPENSHELL
 
     classDef ai_c fill:#059669,stroke:#047857,color:#fff
     class OLLAMA,OWUI,MILVUS,COMFY,INDEXER,MCP,HERMES ai_c
@@ -78,6 +93,34 @@ flowchart TD
 | 12 | Node-RED home automation | nodered/node-red | latest |
 | 13 | Resilio Sync (P2P file sync) | resilio/sync | latest |
 | 14 | Cluster mgmt plane (Rancher downstream + Fleet) | README only | v2.14.3 |
+| 15 | cert-manager + `letsencrypt-dns` ClusterIssuer | jetstack/cert-manager | v1.20.2 |
+| 16 | ash4d.com origin (nginx placeholder) | raw manifests | nginx-unprivileged:alpine |
+| 17 | Buzz relay (+ standalone MinIO) | **vendored** chart `buzz` | 0.1.6 (app 0.1.0) |
+| 18 | lab-memory — Karakeep + 3 MCP servers + ingest | karakeep-app/karakeep | chart 0.32.0 |
+| 19 | NemoClaw ops-agent scaffolding (RBAC/netpol) | raw manifests | — |
+| 20 | OpenShell agent gateway | **vendored** chart `helm-chart` | 0.0.0-dev |
+
+### Directory numbers 15+ are append-order, not install-order
+
+`15`–`20` were added after the original `00`–`14` tree and are numbered in the
+order they were adopted, not their true position in a dependency graph.
+**cert-manager (15) actually installs before almost everything** — it issues the
+TLS for `attu` (06), `hermes` (10), `lab-memory` (18) and `registry`, so on a
+rebuild it belongs alongside `01`–`03`. It was appended rather than inserted
+because renumbering the existing tree would invalidate every Fleet `GitRepo`
+path and every cross-reference in the docs, for a cosmetic gain.
+
+Real dependency order for the new components:
+
+    15-cert-manager  →  16, 17, 18   (anything terminating TLS in-cluster)
+    19-nemoclaw      →  20-openshell (openshell writes into nemoclaw-sandboxes)
+
+Two of these charts are **vendored** (committed under `<dir>/chart/`) rather than
+pulled from a repo, which is a departure from `04`/`05`/`06`. Neither is
+available to pin: `buzz-0.1.6` is published nowhere reachable, and OpenShell
+publishes only the mutable tag `0.0.0-dev`, which has already drifted from what
+is running. Both were recovered from their live Helm release Secrets. See
+`14-cluster-mgmt/FLEET-WIRING.md`.
 
 Each directory contains a README with the exact install commands and the reasoning behind non-default values. Helm components follow one pattern:
 

@@ -1,0 +1,48 @@
+# Fleet bundle — ollama-code MCP server (raw manifests).
+#
+# Moved here from the standalone ollama-code-mcp repo, and MOVED NAMESPACE at
+# the same time: it ran in its own `ollama-code` namespace and belongs in `ai`
+# with the rest of the MCP layer and ollama-exporter.
+#
+# The manifests needed no edits — none of them hardcodes a namespace, so
+# defaultNamespace below is what places them. Verified `kubectl diff`-clean
+# against the live objects in `ollama-code` before the move, so the only change
+# is placement.
+#
+# THIS IS THE ONE PATH IN THIS BATCH THAT IS NOT AN ADOPTION. It is a
+# migration, and it takes mcp-ollama.ash4d.com down briefly:
+#
+#   - The host cannot serve from two namespaces at once. Traefik would see two
+#     Ingresses claiming mcp-ollama.ash4d.com and the result is undefined, so
+#     this is a cutover, not a parallel run.
+#   - mcp-ollama-ash4d-tls is namespace-scoped. The Certificate in
+#     `ollama-code` does not follow the Ingress; cert-manager's ingress-shim
+#     issues a NEW one in `ai` from the cert-manager.io/cluster-issuer
+#     annotation. That is a fresh DNS-01 round trip, so expect a minute or two
+#     of TLS failure after cutover, longer if Cloudflare is slow.
+#   - Anything configured to reach mcp-ollama.ash4d.com blips for that window.
+#
+# Order: delete the old namespace's Ingress FIRST, then enable this path, so the
+# two Ingresses never coexist. Full sequence and rollback in FLEET-WIRING.md.
+#
+# NOT copied from the source repo: k8s/cert-manager-issuer.yaml. It declares the
+# same cluster-scoped `letsencrypt-dns` ClusterIssuer that 15-cert-manager/issuer
+# now owns, and two bundles declaring one cluster-scoped object would contend
+# for it. k8s/kustomization.yaml is also dropped — Fleet reads the manifests
+# directly and never invoked it.
+#
+# NESTING NOTE: this directory sits under 09-mcp, which is itself an adopted
+# path. It carries its own fleet.yaml specifically so Fleet treats it as a
+# separate bundle rather than folding it into lab-ai-09-mcp — the same reason
+# 09-mcp/docs-rag, which has NO fleet.yaml, IS folded in. Confirm at adoption
+# time that lab-ai-09-mcp's resource count did not change.
+defaultNamespace: ai
+
+# Raw-manifest bundle, but Fleet still deploys it via Helm internally — so
+# adopting the objects that are already on the cluster needs takeOwnership.
+# Without it the first sync fails: the live objects carry no
+# meta.helm.sh/release-name annotation, and Helm refuses to touch resources it
+# does not believe it owns. With it, adoption is metadata-only (Helm labels on
+# the top-level objects), so no pod template changes and no restarts.
+helm:
+  takeOwnership: true

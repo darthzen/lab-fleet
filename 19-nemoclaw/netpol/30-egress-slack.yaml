@@ -1,0 +1,32 @@
+# Slack (approval channel + conversational ops) is inherently external and the
+# agent reaches it outbound over 443 (Socket Mode / WSS — no inbound webhook, so
+# no ingress rule is needed).
+#
+# Slack publishes broad, rotating IP ranges, so pinning exact CIDRs is brittle.
+# Instead: allow 443 to the public internet but EXCLUDE all RFC1918 space. That
+# reaches Slack while denying lateral movement into the home LAN
+# (192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12) and cluster/service CIDRs.
+# A stricter egress gateway that permits *only* Slack is a v2 hardening item
+# (noted in docs/openshell-k8s.md).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: egress-slack-https
+  namespace: nemoclaw
+  labels:
+    app.kubernetes.io/part-of: nemoclaw-ops-agent
+spec:
+  podSelector: {}
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP

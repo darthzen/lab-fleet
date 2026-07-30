@@ -1,0 +1,143 @@
+affinity: {}
+certManager:
+  caSecretName: openshell-ca-tls
+  certificateDuration: 8760h
+  certificateRenewBefore: 720h
+  clientCaFromServerTlsSecret: true
+  enabled: false
+  serverDnsNames:
+  - openshell
+  - openshell.openshell.svc
+  - openshell.openshell.svc.cluster.local
+  - localhost
+  - openshell.localhost
+  - '*.openshell.localhost'
+  - host.docker.internal
+  serverIpAddresses:
+  - 127.0.0.1
+fullnameOverride: ''
+grpcRoute:
+  enabled: false
+  gateway:
+    className: eg
+    create: false
+    listener:
+      allowedRoutes: Same
+      port: 80
+      protocol: HTTP
+      tls:
+        certificateRefs: []
+    name: ''
+    namespace: ''
+  hostnames: []
+image:
+  pullPolicy: IfNotPresent
+  repository: ghcr.io/nvidia/openshell/gateway
+  tag: ''
+imagePullSecrets: []
+nameOverride: openshell
+networkPolicy:
+  enabled: true
+nodeSelector: {}
+pkiInitJob:
+  enabled: true
+  serverDnsNames: []
+  serverIpAddresses: []
+podAnnotations: {}
+podLabels: {}
+podLifecycle:
+  terminationGracePeriodSeconds: 5
+podSecurityContext:
+  fsGroup: 1000
+probes:
+  liveness:
+    failureThreshold: 3
+    initialDelaySeconds: 2
+    periodSeconds: 5
+    timeoutSeconds: 1
+  readiness:
+    failureThreshold: 3
+    initialDelaySeconds: 1
+    periodSeconds: 2
+    timeoutSeconds: 1
+  startup:
+    failureThreshold: 30
+    periodSeconds: 2
+    timeoutSeconds: 1
+replicaCount: 1
+resources: {}
+sandboxServiceAccount:
+  annotations: {}
+  create: true
+  name: ''
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  runAsNonRoot: true
+  runAsUser: 1000
+server:
+  appArmorProfile: Unconfined
+  auth:
+    allowUnauthenticatedUsers: true
+  dbUrl: sqlite:/var/openshell/openshell.db
+  defaultRuntimeClassName: ''
+  disableTls: false
+  enableLoopbackServiceHttp: true
+  enableUserNamespaces: false
+  externalDbSecret: ''
+  grpcEndpoint: ''
+  grpcRateLimit:
+    requests: 0
+    windowSeconds: 0
+  hostGatewayIP: ''
+  logLevel: info
+  oidc:
+    adminRole: ''
+    audience: openshell-cli
+    caConfigMapName: ''
+    issuer: ''
+    jwksTtl: 3600
+    rolesClaim: ''
+    scopesClaim: ''
+    userRole: ''
+  providerTokenGrants:
+    spiffe:
+      enabled: false
+      workloadApiSocketPath: /spiffe-workload-api/spire-agent.sock
+  sandboxImage: ghcr.io/nvidia/openshell-community/sandboxes/base:latest
+  sandboxImagePullPolicy: IfNotPresent
+  sandboxImagePullSecrets: []
+  sandboxJwt:
+    gatewayId: ''
+    k8sSaTokenTtlSecs: 3600
+    secretDefaultMode: ''
+    signingSecretName: ''
+    ttlSecs: 3600
+  sandboxNamespace: nemoclaw
+  tls:
+    certSecretName: openshell-server-tls
+    clientCaSecretName: openshell-server-client-ca
+    clientTlsSecretName: openshell-client-tls
+  workspaceDefaultStorageSize: ''
+service:
+  healthPort: 8081
+  metricsPort: 9090
+  port: 8080
+  type: ClusterIP
+serviceAccount:
+  annotations: {}
+  create: true
+  name: ''
+supervisor:
+  image:
+    pullPolicy: ''
+    repository: ghcr.io/nvidia/openshell/supervisor
+    tag: ''
+  sideloadMethod: ''
+  topology: combined
+tolerations: []
+workload:
+  allowMultiReplicaStatefulSet: false
+  kind: statefulset

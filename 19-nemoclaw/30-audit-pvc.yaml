@@ -1,0 +1,15 @@
+# Append-only audit store for the agent (T-015). Longhorn RWO so incident
+# history survives pod restarts/reschedules. Created under sa-nemoclaw-deploy.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: audit-store
+  namespace: nemoclaw
+  labels:
+    app.kubernetes.io/part-of: nemoclaw-ops-agent
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 2Gi

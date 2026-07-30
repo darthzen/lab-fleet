@@ -1,0 +1,25 @@
+# Mirrors ollama-code-mcp: Traefik + cert-manager DNS-01 (letsencrypt-dns).
+# Requires mcp-memory.ash4d.com -> 192.168.7.150 (shared Traefik VIP) in DNS.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: lab-memory-mcp
+  namespace: lab-memory
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-dns
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [mcp-memory.ash4d.com]
+      secretName: mcp-memory-ash4d-tls
+  rules:
+    - host: mcp-memory.ash4d.com
+      http:
+        paths:
+          - path: /mcp
+            pathType: Prefix
+            backend:
+              service:
+                name: lab-memory-mcp
+                port:
+                  number: 8765

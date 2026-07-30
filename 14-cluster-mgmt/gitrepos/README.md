@@ -19,20 +19,39 @@ adopted, rolled back, or paused independently of every other.
 
 | GitRepo | Namespace | Paths | Risk |
 |---|---|---|---|
-| `lab-node-red` | `node-red` | `12-node-red` | low — **start here** |
+| `lab-nemoclaw` | `nemoclaw` + `nemoclaw-sandboxes` | `19-nemoclaw` | **lowest — start here.** No pod templates at all |
+| `lab-node-red` | `node-red` | `12-node-red` | low |
 | `lab-emby` | `emby` | `11-emby` | low |
 | `lab-resilio` | `resilio` | `13-resilio` | low |
+| `lab-ash4d-origin` | `ash4d-origin` | `16-ash4d-origin` | low |
 | `lab-hermes` | `hermes` | `10-hermes` | low–med — needs `hermes-webui` Secret |
-| `lab-ai` | `ai` | 8 paths (04→09) | med — **no `.yaml` file, staged by hand — see below** |
+| `lab-ai` | `ai` | 9 paths (04→09) | med — **no `.yaml` file, staged by hand — see below** |
+| `lab-openshell` | `openshell` | `20-openshell` | med — **after `lab-nemoclaw`**; vendored chart |
+| `lab-buzz` | `buzz` | `17-buzz` — then patch in `17-buzz/minio` | med — stateful; needs `buzz-relay` Secret |
+| `lab-lab-memory` | `lab-memory` | `18-lab-memory` — then patch in `18-lab-memory/raw` | med — **rolls one pod**; needs 2 Secrets |
 | `lab-metallb-system` | `metallb-system` | `01-networking` — then patch in `01-networking/pools` | med–high |
 | `lab-nvidia-device-plugin` | `nvidia-device-plugin` | `03-gpu` — `03-gpu/runtimeclass` is **on hold, k3s owns it** | med–high |
 | `lab-cattle-monitoring-system` | `cattle-monitoring-system` | `03-gpu/dcgm-exporter` | med |
+| `lab-cert-manager` | `cert-manager` | `15-cert-manager` — then patch in `15-cert-manager/issuer` | **highest of the app tranche — owns the CRDs** |
 | `lab-longhorn-system` | `longhorn-system` | `02-longhorn` | **highest — adopt last** |
 
 Adopt in that order. Within `lab-ai`, add paths one at a time — raw manifests
 (`08-indexer`, `09-mcp`, `07-comfyui`, `06-milvus/attu`,
-`04-ollama/ollama-exporter`) before the Helm charts (`04-ollama`,
-`05-open-webui`, `06-milvus`).
+`04-ollama/ollama-exporter`, `09-mcp/ollama-code`) before the Helm charts
+(`04-ollama`, `05-open-webui`, `06-milvus`).
+
+Two ordering constraints are hard, not preferences:
+
+- **`lab-nemoclaw` before `lab-openshell`.** The openshell chart renders a
+  ServiceAccount, Role, RoleBinding and NetworkPolicy *into* the
+  `nemoclaw-sandboxes` namespace, and `lab-nemoclaw` is what creates that
+  namespace. These two are not independently removable.
+- **`lab-cert-manager` late, and never deleted.** It owns the six cert-manager
+  CRDs, so deleting the GitRepo deletes every `Certificate`, `Issuer` and
+  `Order` object in the cluster. Roll back by removing the path.
+
+`lab-ash4d-origin`, `lab-nemoclaw` and `lab-openshell` hold a single path each,
+so there is nothing to stage for them.
 
 ## `lab-ai` deliberately has no `.yaml` file
 
@@ -49,12 +68,25 @@ and leave everything else alone:
 ```bash
 # Current live state — the five raw-manifest paths (adopted 2026-07-29).
 # Append exactly ONE entry per step, in this order:
-#   04-ollama → 05-open-webui → 06-milvus
+#   09-mcp/ollama-code → 04-ollama → 05-open-webui → 06-milvus
 kubectl --context rancher -n fleet-default patch gitrepo lab-ai --type=merge -p '{"spec":{"paths":[
   "08-indexer","09-mcp","07-comfyui","06-milvus/attu","04-ollama/ollama-exporter",
-  "04-ollama"
+  "09-mcp/ollama-code"
 ]}}'
 ```
+
+`09-mcp/ollama-code` is first in that order because it is the only entry that is
+**not** an adoption — it moves the ollama-code MCP server out of its own
+`ollama-code` namespace and into `ai`. Read `09-mcp/ollama-code/fleet.yaml`
+before running it: the old Ingress must be deleted *first* so two Ingresses
+never both claim `mcp-ollama.ash4d.com`, and cert-manager has to issue a fresh
+`mcp-ollama-ash4d-tls` in `ai`. Full sequence in `FLEET-WIRING.md`.
+
+Note that path lives *underneath* `09-mcp`, which is already adopted. It carries
+its own `fleet.yaml` so Fleet splits it into a separate bundle instead of
+folding it into `lab-ai-09-mcp` — the same mechanism that keeps
+`09-mcp/docs-rag`, which has no `fleet.yaml`, folded in. After adding it, check
+that `lab-ai-09-mcp`'s resource count did not change.
 
 Verify before the next step — both must be `true`, and `helm -n ai list` should
 show one new release at revision 1:
