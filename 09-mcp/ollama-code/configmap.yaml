@@ -5,10 +5,16 @@ metadata:
   labels:
     app.kubernetes.io/name: ollama-code-mcp
 data:
-  # ollama.ash4d.com resolves to the Ollama LoadBalancer; swap in the
-  # cluster-internal service DNS name instead if you ever run Ollama and this
-  # server in the same cluster and want to skip the external hop.
-  OLLAMA_BASE_URL: "http://ollama.ash4d.com:11434"
+  # The in-cluster ollama-exporter proxy, matching 18-lab-memory/values.yaml —
+  # it fronts ollama:11434 and meters usage, so calls from this server land in
+  # the same accounting as every other in-cluster consumer.
+  #
+  # The previous value (http://ollama.ash4d.com:11434) broke on 2026-07-30: that
+  # name no longer resolves to the Ollama LoadBalancer, from inside the cluster
+  # or out. It answers 35.208.14.166 with 11434 closed, so every call through
+  # this server hung until OLLAMA_TIMEOUT. Prefer cluster-internal DNS here —
+  # the external hop bought nothing and put public DNS in the path.
+  OLLAMA_BASE_URL: "http://ollama-exporter.ai.svc.cluster.local:9401"
   # Must be a tag that exists on the server — see 04-ollama/values.yaml
   # models.create. The previous value (qwen3-coder:30b) was deleted on
   # 2026-07-30 and every call through this server failed model-not-found.
