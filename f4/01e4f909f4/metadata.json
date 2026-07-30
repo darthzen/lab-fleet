@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "f401e4f909f4",
+  "strategy": "manual-commit",
+  "branch": "fleet-cert-manager-adopted",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "14-cluster-mgmt/FLEET-WIRING.md",
+    "14-cluster-mgmt/gitrepos/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f4/01e4f909f4/0/metadata.json",
+      "transcript": "/f4/01e4f909f4/0/full.jsonl",
+      "compact_transcript": "/f4/01e4f909f4/0/transcript.jsonl",
+      "content_hash": "/f4/01e4f909f4/0/content_hash.txt",
+      "prompt": "/f4/01e4f909f4/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 144,
+    "cache_creation_tokens": 79240,
+    "cache_read_tokens": 34025337,
+    "output_tokens": 56955,
+    "api_call_count": 78
+  }
+}
