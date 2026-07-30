@@ -5,7 +5,7 @@
 
 Key choices: Tesla V100 (32 GB) pinned by GPU UUID; flash attention with an
 **f16 KV cache** (full precision — accuracy over concurrency);
-`OLLAMA_CONTEXT_LENGTH=131072` (128k) with `OLLAMA_NUM_PARALLEL=1`;
+`OLLAMA_CONTEXT_LENGTH=98304` (96k) with `OLLAMA_NUM_PARALLEL=1`;
 LoadBalancer at `192.168.7.153:11434` so LAN clients (Claude Code via
 ollama-code-mcp, the Xcode instance) reach it directly. 200Gi Longhorn PV for
 models. Coding tags are declared in `values.yaml` under `ollama.models.create`
@@ -26,38 +26,36 @@ History:
   ~703 MiB of qwen3-coder:30b onto the CPU and prompt processing fell to
   152 tok/s, declining further as context grew.
 - 2026-07-30 — settled at 98304 (96k) x 2 slots. Still clears the 64k floor.
-- 2026-07-30 (later) — moved to 131072 (128k) x 1 slot with **f16 KV**, sized
-  by measurement for the new primary `qwen3.6:27b` (UD-Q6_K_XL). The hybrid
-  SSM architecture makes KV ~2.6x cheaper per token than `qwen3-coder:30b`,
-  which pays for both the precision upgrade and the larger context.
+- 2026-07-30 (later) — briefly 131072 (128k) x 1 slot with **f16 KV**, from a
+  derived KV estimate. The first real load spilled 5 layers (~3.6 GiB) to CPU:
+  the derivation had divided the measured KV delta by 2 slots, but a
+  per-request `num_ctx` allocates that amount **total**, so the true cost is
+  double what was computed. Corrected the same day by load-testing.
+- 2026-07-30 (final) — **98304 (96k) x 1 slot, f16 KV.** Largest tested
+  configuration that stays fully GPU-resident.
 
 ## VRAM budget
 
 Primary model is `qwen3.6:27b` (27.8B dense, UD-Q6_K_XL, arch `qwen35` —
 64 blocks, hybrid attention + state-space). KV cost **cannot be computed from
 GGUF metadata**: `qwen35.attention.head_count_kv` is null and the ratio of
-full-attention to state-space layers is not exposed. It was measured on the
-live pod, 2026-07-30, by loading at two contexts and subtracting:
+full-attention to state-space layers is not exposed. Ground truth comes from
+the model-load log (`llama_kv_cache` lines, 2026-07-30): 131072 ctx at f16
+allocates **8192 MiB = 64 KiB/token exactly**. The hybrid-SSM discount is real
+(~1/3 the cost of a comparable full-attention stack) but half as large as the
+first derivation claimed — see the values.yaml comment for the failure mode.
 
-| Load (q8_0 KV, 2 slots) | `size_vram` |
+Load tests at f16 x 1 slot (`size == size_vram` means fully GPU-resident):
+
+| `num_ctx` | Result |
 |---|---|
-| `num_ctx` 8192 | 25,113,500,056 B |
-| `num_ctx` 98304 | 28,701,727,128 B |
+| 98304 (96k) | **29.21 GiB, fully on GPU — current setting** |
+| 106496 (104k) | spills ~2 GiB to CPU |
+| 114688 (112k) | spills ~2.1 GiB |
+| 131072 (128k) | spills ~3.6 GiB, 5 layers offloaded |
 
-Derived: `(28701727128 − 25113500056) / (2 × 90112)` = **19,910 B/token at
-q8_0** → **~37,470 B/token at f16** (×1.882). Sanity: qwen3-coder:30b measured
-52,224 B/token q8_0 with the same method.
-
-| Component | Size |
-|---|---|
-| Card (Tesla V100 32GB) | 31.75 GiB |
-| Weights + compute buffers (measured) | 23.09 GiB |
-| KV cache, f16 @ 128k x 1 | 4.57 GiB |
-| Headroom | ~4.1 GiB |
-
-KV scales as `ctx x slots x 36.6 KiB` at f16. In the same envelope: 96k
-(3.43 GiB), 192k (6.86 GiB — fits on paper but extrapolates 2x past the
-measured range), 256k (9.15 GiB — over budget).
+KV scales as `ctx x slots x 64 KiB` at f16 (q8_0 would be ~34.8 KiB/token —
+not used; accuracy priority).
 
 After any change to context, parallelism, or KV cache type, confirm the model is
 entirely on GPU:
@@ -68,11 +66,9 @@ entirely on GPU:
 Do not fall back to q8_0 KV to close a gap without an explicit decision; dropping
 KV precision is what the 2026-07-30 change exists to avoid.
 
-Also check the model-load log line confirms `flash_attn = 1`: the V100 is Volta
-(SM70), llama.cpp's newer FA kernels target Turing+, and FA being active there
-has only ever been inferred from VRAM numbers, never read from a log
-(2026-07-30 session, open question). With f16 KV this is a performance
-question, not a correctness one.
+Flash attention on Volta (SM70) is **confirmed working** — the 2026-07-30 load
+log reads `llama_context: flash_attn = enabled` and `warmup: flash attention is
+enabled`. The former open question is closed.
 
 ## Sampling tags
 

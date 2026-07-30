@@ -14,32 +14,31 @@ extraEnv:
 # ollama sizes the KV cache as num_ctx x num_parallel — each slot reserves the
 # full OLLAMA_CONTEXT_LENGTH, they do not share one window. 1 slot as of
 # 2026-07-30: this box serves one precise coding session at a time, and a
-# second slot would cost another full context's worth of f16 KV (4.57 GiB at
-# 128k) purely for queueing convenience. Clients queue instead.
+# second slot would cost another full context's worth of f16 KV (6 GiB at
+# 96k) purely for queueing convenience. Clients queue instead.
 - name: OLLAMA_NUM_PARALLEL
   value: "1"
 # Global DEFAULT context for requests that don't pass num_ctx; ollama clamps
 # per model to that model's trained maximum.
 #
-# 131072 (128k) chosen 2026-07-30, sized for qwen3.6:27b (UD-Q6_K_XL) by
-# measurement, not GGUF metadata — the qwen35 architecture reports
-# head_count_kv as null and does not expose the full-attention/state-space
-# layer ratio, so KV cost per token cannot be computed. Measured on the live
-# pod 2026-07-30 (q8_0 KV, 2 slots reserved):
-#     num_ctx  8192 -> size_vram 25113500056
-#     num_ctx 98304 -> size_vram 28701727128
-#     delta / (2 slots x 90112 tokens) = 19910 B/token at q8_0
-#                                      = ~37470 B/token at f16 (x1.882)
-# For comparison, qwen3-coder:30b cost 52224 B/token at q8_0 — the hybrid
-# SSM layers make long context ~2.6x cheaper than a standard transformer.
+# 98304 (96k) at f16 KV, settled 2026-07-30 by load-testing on the live pod —
+# not by arithmetic. The qwen35 architecture reports head_count_kv as null and
+# hides the full-attention/state-space layer ratio, so KV cost per token
+# cannot be computed from GGUF metadata; and the first derivation (37.5 KiB/
+# token) was WRONG because a per-request num_ctx allocates that amount total,
+# not per slot — dividing the measured delta by 2 slots halved the true cost.
 #
-# Fixed cost (weights + buffers) measured at 23.09 GiB, leaving ~8.66 GiB
-# for KV on the 31.75 GiB card. At f16 x 1 slot:
-#      98304 -> 3.43 GiB
-#     131072 -> 4.57 GiB   <- current setting, ~4.1 GiB headroom
-#     196608 -> 6.86 GiB   (fits on paper, but extrapolates 2x past the
-#                           measured range — do not assume without measuring)
-#     262144 -> 9.15 GiB   (over budget)
+# Ground truth from the model-load log (llama_kv_cache lines, 2026-07-30):
+#     131072 ctx at f16 -> 8192 MiB KV = 64 KiB/token exactly
+# The hybrid-SSM discount is real (~2/3 cheaper than a standard transformer
+# at this size) — just half as large as first derived.
+#
+# Load tests, f16 x 1 slot on the 31.75 GiB card (size == size_vram means
+# fully GPU-resident):
+#      98304 -> 29.21 GiB total, fully on GPU   <- current setting
+#     106496 -> spills ~2 GiB to CPU
+#     114688 -> spills ~2.1 GiB
+#     131072 -> spills ~3.6 GiB (5 layers offloaded)
 #
 # Hard floor is 65536: hermes-agent (10-hermes) needs at least 64k. Below
 # that, hermes auto-detects 262144 from model metadata, packs prompts to fit,
@@ -50,15 +49,17 @@ extraEnv:
 # helm never knew about — an undeclared value gets silently reset to ollama's
 # built-in default on the next upgrade.
 - name: OLLAMA_CONTEXT_LENGTH
-  value: "131072"
+  value: "98304"
 # Flash attention stays on for prompt-processing speed regardless of KV type.
 #
 # KV cache moved q8_0 -> f16 on 2026-07-30, deliberately: full-precision KV,
 # no cache quantization error. Priority is accuracy over concurrency after the
-# fossa-mcp hallucination incident. The budget math is in the
-# OLLAMA_CONTEXT_LENGTH note above — f16 at 128k x 1 slot uses 4.57 GiB of
-# the 8.66 GiB available. Do NOT quietly drop back to q8_0 to make a bigger
-# context or a second slot fit; that trade needs an explicit decision.
+# fossa-mcp hallucination incident. The load-test evidence is in the
+# OLLAMA_CONTEXT_LENGTH note above — f16 at 96k x 1 slot is the largest
+# fully-GPU-resident configuration. Do NOT quietly drop back to q8_0 to make
+# a bigger context or a second slot fit; that trade needs an explicit decision.
+# Confirmed from the load log 2026-07-30: flash_attn = enabled on the V100
+# (Volta) — the SM70 kernel-support question is resolved.
 - name: OLLAMA_FLASH_ATTENTION
   value: "1"
 - name: OLLAMA_KV_CACHE_TYPE
