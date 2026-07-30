@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "21747fd42780",
+  "strategy": "manual-commit",
+  "branch": "fleet-adopt-lab-ai-raw",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "14-cluster-mgmt/FLEET-WIRING.md",
+    "14-cluster-mgmt/gitrepos/README.md",
+    "14-cluster-mgmt/gitrepos/lab-ai.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/21/747fd42780/0/metadata.json",
+      "transcript": "/21/747fd42780/0/full.jsonl",
+      "compact_transcript": "/21/747fd42780/0/transcript.jsonl",
+      "content_hash": "/21/747fd42780/0/content_hash.txt",
+      "prompt": "/21/747fd42780/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 134,
+    "cache_creation_tokens": 116031,
+    "cache_read_tokens": 6365324,
+    "output_tokens": 49951,
+    "api_call_count": 68
+  }
+}

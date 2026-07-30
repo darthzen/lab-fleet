@@ -1,0 +1,5 @@
+read the handoff doc and start working on implementing the ai namespace into fleet
+
+---
+
+If lab-ai.yaml is a trap, get rid of it.
