@@ -20,12 +20,12 @@ flowchart TD
     end
 
     subgraph ai["04-09 — AI Stack (namespace: ai)"]
-        OLLAMA[04 Ollama<br/>Qwen3 / V100]
+        OLLAMA[04 Ollama<br/>Qwen3 / V100<br/>+ exporter/proxy]
         OWUI[05 Open WebUI]
         MILVUS[06 Milvus + Attu]
         COMFY[07 ComfyUI]
-        INDEXER[08 k8s-docs-indexer]
-        MCP[09 MCP layer<br/>mcpo · k8s · github · retrieval]
+        INDEXER[08 Doc indexers<br/>k8s · suse · logicpro]
+        MCP[09 MCP layer<br/>mcpo · k8s · github · docs-rag]
     end
 
     subgraph apps["10-13 — Applications"]
@@ -52,8 +52,8 @@ flowchart TD
 |---|---|
 | **Node** | Single-node k3s (`sdf1`) on openSUSE Leap 16.0 |
 | **k3s Version** | v1.35.5+k3s1 (containerd 2.2.3-k3s1) |
-| **GPU 0** | NVIDIA Tesla V100 32GB — LLM inference, pinned by UUID to Ollama |
-| **GPU 1** | NVIDIA GTX 1070 8GB — ComfyUI (device plugin) + Emby transcode (UUID pin) |
+| **GPU 0** | NVIDIA Tesla V100 32GB — LLM inference, pinned by UUID to Ollama; also ComfyUI's pin, which is why ComfyUI sits at `replicas: 0` |
+| **GPU 1** | NVIDIA GTX 1070 8GB — Emby transcode (UUID pin) |
 | **Load Balancer Pool** | MetalLB L2, `192.168.7.150-169` |
 | **Storage** | Longhorn CSI across all stateful workloads |
 
@@ -65,17 +65,17 @@ flowchart TD
 | 01 | MetalLB + Traefik | metallb/metallb; k3s-bundled traefik | 0.16.1 / 39.0.7 (v3.6.12) |
 | 02 | Longhorn | longhorn/longhorn | 1.12.0 |
 | 03 | GPU (RuntimeClass, device plugin, DCGM) | nvdp/nvidia-device-plugin | 0.19.2 / dcgm 4.8.2 |
-| 04 | Ollama | otwld ollama-helm | chart 1.67.0 (app 0.32.0) |
+| 04 | Ollama (+ metrics/proxy exporter) | otwld ollama-helm | chart 1.67.0 (app 0.32.0) |
 | 05 | Open WebUI | open-webui/open-webui | chart 14.8.0 (app 0.9.6) |
 | 06 | Milvus (+ Attu UI) | zilliztech/milvus | chart 5.0.22 (app 2.6.18) |
-| 07 | ComfyUI (+ filebrowser) | mmartial/comfyui-nvidia-docker | latest |
-| 08 | k8s-docs-indexer | local image — source in-repo | v2 |
-| 09 | MCP layer (mcpo, k8s/github MCP, retrieval-tool) | manifests + in-repo source | — |
+| 07 | ComfyUI (+ filebrowser) — scaled to 0 | mmartial/comfyui-nvidia-docker | ubuntu22_cuda12.4.1-latest |
+| 08 | Doc indexers (k8s, SUSE, Logic Pro) | local image + ConfigMap scripts | v2 |
+| 09 | MCP layer (mcpo, k8s/github MCP, docs-rag MCP) | manifests + in-repo source | — |
 | 10 | Hermes agent (Slack AI agent) | nousresearch/hermes-agent | latest |
 | 11 | Emby media server (GPU transcode) | emby/embyserver | latest |
 | 12 | Node-RED home automation | nodered/node-red | latest |
 | 13 | Resilio Sync (P2P file sync) | resilio/sync | latest |
-| 14 | Cluster mgmt plane (Rancher downstream) | README only | v2.14.2 |
+| 14 | Cluster mgmt plane (Rancher downstream + Fleet) | README only | v2.14.3 |
 
 Each directory contains a README with the exact install commands and the reasoning behind non-default values. Helm components follow one pattern:
 

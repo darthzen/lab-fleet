@@ -1,0 +1,519 @@
+# docs-rag-mcp — MCP server for semantic search over the Milvus doc corpora
+# populated by the 08-indexer CronJobs (k8s_docs, suse_docs, logicpro_docs).
+#
+# Successor to the old `retrieval-tool` FastAPI service, which no longer exists
+# on the cluster: same job, but streamable-HTTP MCP instead of OpenAPI, so mcpo
+# can proxy it to Open WebUI AND Claude/Cowork sessions can point at it directly.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: docs-rag-mcp
+  name: docs-rag-mcp
+  namespace: ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: docs-rag-mcp
+  template:
+    metadata:
+      labels:
+        app: docs-rag-mcp
+    spec:
+      containers:
+      - env:
+        # PYTHONPATH is vestigial: the v1 pod pip-installed deps into an
+        # emptyDir at /deps. The v2 image bakes them in, so nothing mounts
+        # there any more — harmless, and left as-is to match the live pod.
+        - name: PYTHONPATH
+          value: /deps
+        - name: PYTHONUNBUFFERED
+          value: '1'
+        # Query embeddings go through ollama-exporter's pass-through proxy
+        # (9401), not ollama directly, so retrieval traffic is counted in the
+        # exporter's metrics. See 04-ollama/ollama-exporter/.
+        - name: OLLAMA_URL
+          value: http://ollama-exporter.ai.svc.cluster.local:9401
+        - name: MILVUS_URI
+          value: http://milvus.ai.svc.cluster.local:19530
+        # Must stay identical to what the indexers embedded with, or the
+        # similarity scores are meaningless.
+        - name: EMBED_MODEL
+          value: nomic-embed-text
+        - name: EMBED_DIM
+          value: '768'
+        - name: PORT
+          value: '8080'
+        # Built locally and imported into containerd on the node — never pushed
+        # to a registry, hence pullPolicy Never. v2 bakes in server.py and its
+        # deps; the ConfigMap below is the source of record for that script.
+        image: localhost/docs-rag-mcp:v2
+        imagePullPolicy: Never
+        livenessProbe:
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          tcpSocket:
+            port: 8080
+        name: server
+        ports:
+        - containerPort: 8080
+          name: http
+        readinessProbe:
+          failureThreshold: 12
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          tcpSocket:
+            port: 8080
+        resources:
+          limits:
+            cpu: '1'
+            memory: 1Gi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    # Pinned LB IP via the MetalLB annotation (rather than spec.loadBalancerIP,
+    # which is deprecated) — Claude/Cowork MCP clients point at this address.
+    metallb.io/loadBalancerIPs: 192.168.7.159
+  labels:
+    app: docs-rag-mcp
+  name: docs-rag-mcp
+  namespace: ai
+spec:
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  selector:
+    app: docs-rag-mcp
+  # LoadBalancer (not ClusterIP like the other MCP servers) so Claude/Cowork
+  # sessions outside the cluster can reach /mcp without going through mcpo.
+  type: LoadBalancer
+---
+# server.py. NOT mounted by the Deployment above — the v2 image bakes it in —
+# but kept applied as the versioned source of record for the next image build.
+# Edit here, rebuild, re-import; see README.md.
+apiVersion: v1
+data:
+  server.py: |
+    #!/usr/bin/env python3
+    """
+    MCP server for the lab's cached documentation corpora.
+
+    Exposes semantic search over the Milvus collections populated by the two doc
+    indexer CronJobs in the `ai` namespace:
+
+      - k8s_docs   <- kubernetes/website          (k8s-docs-indexer,  Sun 03:00)
+      - suse_docs  <- 12 SUSE/openSUSE doc repos  (suse-docs-indexer, Sun 04:00)
+
+    Both were embedded with Ollama `nomic-embed-text` (768-dim), so query vectors
+    must come from the same model or the similarity scores are meaningless.
+
+    Transport is streamable HTTP, matching k8s-mcp-server, so mcpo can proxy it to
+    Open WebUI and Claude/Cowork sessions can point at it directly.
+    """
+
+    import asyncio
+    import json
+    import os
+    from enum import Enum
+    from typing import Any, Dict, List, Optional
+
+    import httpx
+    from mcp.server.fastmcp import FastMCP
+    from pydantic import BaseModel, ConfigDict, Field, field_validator
+    from pymilvus import MilvusClient
+
+    # ---------------------------------------------------------------------------
+    # Constants
+    # ---------------------------------------------------------------------------
+    OLLAMA_URL   = os.getenv("OLLAMA_URL", "http://ollama.ai.svc.cluster.local:11434")
+    MILVUS_URI   = os.getenv("MILVUS_URI", "http://milvus.ai.svc.cluster.local:19530")
+    EMBED_MODEL  = os.getenv("EMBED_MODEL", "nomic-embed-text")
+    EMBED_DIM    = int(os.getenv("EMBED_DIM", "768"))
+    HOST         = os.getenv("HOST", "0.0.0.0")
+    PORT         = int(os.getenv("PORT", "8080"))
+
+    # Upstream doc sites, so results can be cited with a real URL rather than a
+    # repo-relative path the user cannot open.
+    COLLECTIONS: Dict[str, Dict[str, Any]] = {
+        "k8s": {
+            "collection": "k8s_docs",
+            "description": "Kubernetes upstream documentation (kubernetes/website)",
+            "has_repo_field": False,
+        },
+        "suse": {
+            "collection": "suse_docs",
+            "description": "SUSE / openSUSE documentation (SLE, Leap manuals, HA, SAP, "
+                           "RT, HPC, public cloud, SUSE AI, BCI, technical reference docs)",
+            "has_repo_field": True,
+        },
+    }
+
+    mcp = FastMCP("docs_rag_mcp", host=HOST, port=PORT)
+
+    # Connect lazily. MilvusClient dials the server in its constructor, so building it at
+    # import time means a Milvus restart takes this pod down with it (CrashLoopBackOff)
+    # instead of just failing the next search.
+    _milvus_client: Optional[MilvusClient] = None
+    _milvus_lock = asyncio.Lock()
+
+
+    async def _client() -> MilvusClient:
+        global _milvus_client
+        if _milvus_client is None:
+            async with _milvus_lock:
+                if _milvus_client is None:
+                    _milvus_client = await asyncio.to_thread(MilvusClient, uri=MILVUS_URI)
+        return _milvus_client
+
+
+    # ---------------------------------------------------------------------------
+    # Enums / models
+    # ---------------------------------------------------------------------------
+    class Corpus(str, Enum):
+        """Which cached documentation corpus to search."""
+        K8S  = "k8s"
+        SUSE = "suse"
+        ALL  = "all"
+
+
+    class ResponseFormat(str, Enum):
+        """Output format for tool responses."""
+        MARKDOWN = "markdown"
+        JSON     = "json"
+
+
+    class DocsSearchInput(BaseModel):
+        """Input model for semantic search over the cached documentation."""
+        model_config = ConfigDict(str_strip_whitespace=True, validate_assignment=True,
+                                  extra="forbid")
+
+        query: str = Field(
+            ...,
+            description="Natural-language question or topic to search for "
+                        "(e.g. 'how do I resize a persistent volume', 'AppArmor profile syntax')",
+            min_length=2, max_length=1000,
+        )
+        corpus: Corpus = Field(
+            default=Corpus.ALL,
+            description="Which corpus to search: 'k8s' (Kubernetes docs), 'suse' "
+                        "(SUSE/openSUSE docs), or 'all' (both, results merged by score)",
+        )
+        repo: Optional[str] = Field(
+            default=None,
+            description="Restrict SUSE results to one source repo, e.g. 'doc-sle', "
+                        "'doc-suse-ai', 'bci-docs', 'technical-reference-docs'. Call "
+                        "docs_list_sources to see the available repos. Ignored for the k8s corpus.",
+            max_length=128,
+        )
+        limit: int = Field(
+            default=5,
+            description="Maximum passages to return, 1-20. Keep it small: each passage is "
+                        "up to ~1500 characters of documentation text.",
+            ge=1, le=20,
+        )
+        response_format: ResponseFormat = Field(
+            default=ResponseFormat.MARKDOWN,
+            description="'markdown' for readable passages, 'json' for structured results",
+        )
+
+        @field_validator("query")
+        @classmethod
+        def _non_empty(cls, v: str) -> str:
+            if not v.strip():
+                raise ValueError("Query cannot be empty or whitespace only")
+            return v.strip()
+
+
+    class DocsListSourcesInput(BaseModel):
+        """Input model for listing the available corpora."""
+        model_config = ConfigDict(extra="forbid")
+
+        response_format: ResponseFormat = Field(
+            default=ResponseFormat.MARKDOWN,
+            description="'markdown' for a readable summary, 'json' for structured data",
+        )
+
+
+    # ---------------------------------------------------------------------------
+    # Shared helpers
+    # ---------------------------------------------------------------------------
+    async def _embed(text: str) -> List[float]:
+        """Embed a query with the SAME model used at index time.
+
+        A different model (or dimension) yields vectors that are not comparable to the
+        stored ones, which surfaces as confidently-wrong search results rather than an
+        error -- so the dimension is checked explicitly.
+        """
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{OLLAMA_URL}/api/embeddings",
+                json={"model": EMBED_MODEL, "prompt": text},
+                timeout=60.0,
+            )
+            resp.raise_for_status()
+            vec = resp.json()["embedding"]
+        if len(vec) != EMBED_DIM:
+            raise ValueError(
+                f"Embedding model '{EMBED_MODEL}' returned {len(vec)} dimensions, but the "
+                f"collections were built at {EMBED_DIM}. Search would be meaningless."
+            )
+        return vec
+
+
+    async def _search_one(collection: str, vector: List[float], limit: int,
+                          flt: str = "") -> List[Dict[str, Any]]:
+        """Search a single collection. pymilvus is sync, so keep the event loop free."""
+        milvus = await _client()
+
+        def _run() -> List[Dict[str, Any]]:
+            hits = milvus.search(
+                collection_name=collection,
+                data=[vector],
+                limit=limit,
+                filter=flt or "",
+                output_fields=["path", "repo", "text", "chunk_index"],
+                search_params={"metric_type": "COSINE", "params": {"ef": 64}},
+            )
+            return hits[0] if hits else []
+
+        raw = await asyncio.to_thread(_run)
+        results = []
+        for h in raw:
+            ent = h.get("entity", {}) or {}
+            results.append({
+                "score": round(float(h.get("distance", 0.0)), 4),
+                "collection": collection,
+                "repo": ent.get("repo") or ("kubernetes/website" if collection == "k8s_docs" else ""),
+                "path": ent.get("path", ""),
+                "chunk_index": ent.get("chunk_index", 0),
+                "text": ent.get("text", ""),
+            })
+        return results
+
+
+    def _handle_error(e: Exception) -> str:
+        """Actionable errors: point at the thing that is actually broken."""
+        if isinstance(e, httpx.HTTPStatusError):
+            return (f"Error: Ollama returned {e.response.status_code} while embedding the query. "
+                    f"Check that '{EMBED_MODEL}' is pulled on {OLLAMA_URL} (`ollama list`).")
+        if isinstance(e, httpx.TimeoutException):
+            return f"Error: Timed out embedding the query via {OLLAMA_URL}. Is Ollama running?"
+        if isinstance(e, ValueError):
+            return f"Error: {e}"
+        msg = str(e)
+        if "collection not found" in msg.lower() or "can't find collection" in msg.lower():
+            return ("Error: A documentation collection is missing from Milvus. The indexer "
+                    "CronJobs (k8s-docs-indexer, suse-docs-indexer in namespace 'ai') create "
+                    "them on first run. Check: kubectl -n ai get cronjobs")
+        return f"Error: {type(e).__name__}: {msg}"
+
+
+    def _format_markdown(query: str, results: List[Dict[str, Any]]) -> str:
+        lines = [f"# Documentation passages for: {query}", ""]
+        for i, r in enumerate(results, 1):
+            origin = f"{r['repo']}/{r['path']}" if r["repo"] and not r["path"].startswith(r["repo"]) \
+                     else r["path"]
+            lines.append(f"## {i}. {origin}  (score {r['score']}, chunk {r['chunk_index']})")
+            lines.append("")
+            lines.append(r["text"])
+            lines.append("")
+        return "\n".join(lines)
+
+
+    # ---------------------------------------------------------------------------
+    # Tools
+    # ---------------------------------------------------------------------------
+    @mcp.tool(
+        name="docs_search",
+        annotations={
+            "title": "Search cached Kubernetes and SUSE documentation",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+    )
+    async def docs_search(params: DocsSearchInput) -> str:
+        """Semantic search over the locally cached Kubernetes and SUSE/openSUSE documentation.
+
+        Returns the documentation passages most similar to the query, drawn from a Milvus
+        index that is refreshed weekly from the upstream doc repositories. Use it to ground
+        answers about Kubernetes, SLE/openSUSE, SUSE HA, SUSE AI, BCI containers, or the SUSE
+        technical reference docs in the actual current documentation rather than recall.
+
+        This searches a vector index. It does NOT browse the web and cannot see docs that are
+        not in the corpora listed by docs_list_sources.
+
+        Args:
+            params (DocsSearchInput): Validated input containing:
+                - query (str): Natural-language question or topic
+                - corpus (Corpus): 'k8s', 'suse', or 'all' (default 'all')
+                - repo (Optional[str]): Restrict SUSE results to one repo (e.g. 'doc-sle')
+                - limit (int): Max passages, 1-20 (default 5)
+                - response_format (ResponseFormat): 'markdown' (default) or 'json'
+
+        Returns:
+            str: Markdown passages, or JSON with schema:
+            {
+              "query": str,
+              "count": int,
+              "results": [
+                {
+                  "score": float,        # cosine similarity, higher is better (0.0-1.0)
+                  "collection": str,     # "k8s_docs" | "suse_docs"
+                  "repo": str,           # e.g. "doc-sle", "kubernetes/website"
+                  "path": str,           # source file path within the repo
+                  "chunk_index": int,    # position of this passage within the file
+                  "text": str            # the documentation passage itself
+                }
+              ]
+            }
+            On failure: "Error: <what broke and what to check>"
+
+        Examples:
+            - "How do I expand a PVC?" -> query="expand persistent volume claim", corpus="k8s"
+            - "SUSE AI install steps" -> query="install SUSE AI", corpus="suse", repo="doc-suse-ai"
+            - "Compare k8s and SUSE guidance on cgroups" -> corpus="all"
+            - Don't use when: the question is about THIS cluster's live state (use the k8s MCP)
+        """
+        try:
+            vector = await _embed(params.query)
+
+            targets = ([params.corpus.value] if params.corpus != Corpus.ALL
+                       else ["k8s", "suse"])
+
+            tasks = []
+            for key in targets:
+                cfg = COLLECTIONS[key]
+                flt = ""
+                if params.repo:
+                    if not cfg["has_repo_field"]:
+                        continue          # repo filter is meaningless for the k8s corpus
+                    flt = f'repo == "{params.repo}"'
+                # Over-fetch when merging two corpora so the top-N is a real ranking.
+                per_corpus = params.limit if len(targets) == 1 else params.limit * 2
+                tasks.append(_search_one(cfg["collection"], vector, per_corpus, flt))
+
+            if not tasks:
+                return (f"Error: repo='{params.repo}' was given with corpus='k8s', but the "
+                        f"Kubernetes corpus has no per-repo split. Drop the repo filter, or "
+                        f"set corpus='suse'.")
+
+            merged: List[Dict[str, Any]] = []
+            for batch in await asyncio.gather(*tasks):
+                merged.extend(batch)
+            merged.sort(key=lambda r: r["score"], reverse=True)
+            results = merged[: params.limit]
+
+            if not results:
+                hint = f" in repo '{params.repo}'" if params.repo else ""
+                return (f"No documentation passages matched '{params.query}'{hint}. "
+                        f"Try broader wording, or call docs_list_sources to confirm the corpus "
+                        f"is populated.")
+
+            if params.response_format == ResponseFormat.JSON:
+                return json.dumps(
+                    {"query": params.query, "count": len(results), "results": results},
+                    indent=2,
+                )
+            return _format_markdown(params.query, results)
+
+        except Exception as e:  # noqa: BLE001
+            return _handle_error(e)
+
+
+    @mcp.tool(
+        name="docs_list_sources",
+        annotations={
+            "title": "List cached documentation corpora",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+    )
+    async def docs_list_sources(params: DocsListSourcesInput) -> str:
+        """List the cached documentation corpora, their sizes, and the repos inside them.
+
+        Call this before docs_search when you need a valid value for the `repo` filter, or to
+        confirm a corpus is actually populated before trusting an empty search result.
+
+        Args:
+            params (DocsListSourcesInput): Validated input containing:
+                - response_format (ResponseFormat): 'markdown' (default) or 'json'
+
+        Returns:
+            str: Markdown summary, or JSON with schema:
+            {
+              "corpora": [
+                {
+                  "corpus": str,        # "k8s" | "suse" -- the value to pass to docs_search
+                  "collection": str,    # Milvus collection name
+                  "description": str,
+                  "rows": int,          # indexed passages (0 means the indexer has not run)
+                  "repos": [str]        # valid `repo` filter values, empty for k8s
+                }
+              ]
+            }
+            On failure: "Error: <what broke and what to check>"
+        """
+        try:
+            milvus = await _client()
+
+            def _stats() -> List[Dict[str, Any]]:
+                out = []
+                for key, cfg in COLLECTIONS.items():
+                    coll = cfg["collection"]
+                    entry: Dict[str, Any] = {
+                        "corpus": key,
+                        "collection": coll,
+                        "description": cfg["description"],
+                        "rows": 0,
+                        "repos": [],
+                    }
+                    if not milvus.has_collection(coll):
+                        entry["description"] += "  [NOT YET CREATED -- indexer has not run]"
+                        out.append(entry)
+                        continue
+                    entry["rows"] = milvus.get_collection_stats(coll).get("row_count", 0)
+                    if cfg["has_repo_field"]:
+                        # Milvus has no DISTINCT; sample the index and collect repo names.
+                        rows = milvus.query(coll, filter="chunk_index == 0",
+                                            output_fields=["repo"], limit=2000)
+                        entry["repos"] = sorted({r["repo"] for r in rows if r.get("repo")})
+                    out.append(entry)
+                return out
+
+            corpora = await asyncio.to_thread(_stats)
+
+            if params.response_format == ResponseFormat.JSON:
+                return json.dumps({"corpora": corpora}, indent=2)
+
+            lines = ["# Cached documentation corpora", ""]
+            for c in corpora:
+                lines.append(f"## {c['corpus']}  (`{c['collection']}`)")
+                lines.append(f"- {c['description']}")
+                lines.append(f"- **Indexed passages**: {c['rows']:,}")
+                if c["repos"]:
+                    lines.append(f"- **Repos** (valid `repo` filter values): {', '.join(c['repos'])}")
+                lines.append("")
+            lines.append(f"Embeddings: `{EMBED_MODEL}` ({EMBED_DIM}-dim), cosine similarity.")
+            return "\n".join(lines)
+
+        except Exception as e:  # noqa: BLE001
+            return _handle_error(e)
+
+
+    if __name__ == "__main__":
+        mcp.run(transport="streamable-http")
+kind: ConfigMap
+metadata:
+  name: docs-rag-mcp-src
+  namespace: ai

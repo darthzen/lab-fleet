@@ -1,3 +1,10 @@
+# Two containers in one pod, sharing the hermes-data PVC:
+#   hermes-agent — the Nous Research agent + its API server on 8642
+#   hermes-webui — a separate community UI on 8787, which reads the agent's
+#                  state directly off the shared volume rather than over HTTP.
+# They are co-located (not two Deployments) because hermes-webui needs both the
+# agent's state dir AND a copy of the agent source tree, so splitting them would
+# mean an RWX volume. Recreate strategy — single RWO Longhorn writer.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,6 +26,7 @@ spec:
     spec:
       containers:
       - command:
+        - hermes
         - gateway
         - run
         env:
@@ -52,7 +60,8 @@ spec:
             secretKeyRef:
               key: SLACK_ALLOWED_USERS
               name: hermes-slack
-        image: ghcr.io/nousresearch/hermes-agent:latest
+        image: docker.io/nousresearch/hermes-agent:latest
+        imagePullPolicy: Always
         name: hermes-agent
         ports:
         - containerPort: 8642
@@ -67,14 +76,92 @@ spec:
         volumeMounts:
         - mountPath: /opt/data
           name: data
+      # The UI runs as uid 10000 (hence the fix-perms init container) and wants
+      # the agent's source tree on disk to introspect it — supplied by the
+      # copy-agent-src init container via the agent-src emptyDir.
+      - env:
+        - name: WANTED_UID
+          value: '10000'
+        - name: WANTED_GID
+          value: '10000'
+        - name: HERMES_WEBUI_HOST
+          value: 0.0.0.0
+        - name: HERMES_WEBUI_PORT
+          value: '8787'
+        # NOTE: this is a LITERAL value on the live pod. Externalised to a Secret
+        # here because this repo is public and Fleet renders manifests into a
+        # Bundle on the controller. Create the Secret (see
+        # hermes-webui.secret.example.yaml.txt) BEFORE enabling this path, or the
+        # pod will not start. The value currently in the live spec has been
+        # sitting in plaintext and should be rotated, not reused.
+        - name: HERMES_WEBUI_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: hermes-webui
+        - name: HERMES_WEBUI_STATE_DIR
+          value: /home/hermeswebui/.hermes/webui
+        - name: HERMES_NIX_BUILD
+          value: '1'
+        image: ghcr.io/nesquena/hermes-webui:latest
+        imagePullPolicy: Always
+        name: hermes-webui
+        ports:
+        - containerPort: 8787
+          name: webui
+        resources:
+          limits:
+            cpu: '1'
+            memory: 1Gi
+          requests:
+            cpu: 50m
+            memory: 256Mi
+        volumeMounts:
+        # Same PVC as the agent, mounted where the UI expects its state.
+        - mountPath: /home/hermeswebui/.hermes
+          name: data
+        - mountPath: /home/hermeswebui/.hermes/hermes-agent
+          name: agent-src
+      initContainers:
+      # The PVC is created root-owned; hermes-webui runs as 10000 and cannot
+      # write its state dir without this.
+      - command:
+        - sh
+        - -c
+        - chown -R 10000:10000 /opt/data && echo chowned-to-10000
+        image: busybox:1.36
+        name: fix-perms
+        securityContext:
+          runAsUser: 0
+        volumeMounts:
+        - mountPath: /opt/data
+          name: data
+      # Stages the agent source out of the agent image into a shared emptyDir so
+      # hermes-webui can read it without the two images having to be the same.
+      - command:
+        - sh
+        - -c
+        - cp -a /opt/hermes/. /agent-src/ && echo agent-source-copied
+        image: docker.io/nousresearch/hermes-agent:latest
+        imagePullPolicy: Always
+        name: copy-agent-src
+        volumeMounts:
+        - mountPath: /agent-src
+          name: agent-src
       volumes:
       - name: data
         persistentVolumeClaim:
           claimName: hermes-data
+      - emptyDir: {}
+        name: agent-src
 ---
 apiVersion: v1
 kind: Service
 metadata:
+  annotations:
+    # Allocate from lan-pool (01-networking/pools) — no fixed IP requested, so
+    # MetalLB picks one; it currently holds 192.168.7.161.
+    metallb.universe.tf/address-pool: lan-pool
   labels:
     app: hermes-agent
   name: hermes-agent
@@ -84,9 +171,41 @@ spec:
   - name: api
     port: 8642
     targetPort: 8642
+  - name: webui
+    port: 8787
+    targetPort: 8787
   selector:
     app: hermes-agent
-  type: ClusterIP
+  # LoadBalancer (192.168.7.161): the API on 8642 is consumed off-cluster and is
+  # not behind the ingress — only the UI on 8787 is.
+  type: LoadBalancer
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    # cert-manager issues/renews hermes-ash4d-tls via the DNS-01 issuer.
+    cert-manager.io/cluster-issuer: letsencrypt-dns
+  name: hermes-agent
+  namespace: hermes
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: hermes.ash4d.com
+    http:
+      paths:
+      # 8787 = the UI. The agent API on 8642 is deliberately not exposed here.
+      - backend:
+          service:
+            name: hermes-agent
+            port:
+              number: 8787
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - hermes.ash4d.com
+    secretName: hermes-ash4d-tls
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

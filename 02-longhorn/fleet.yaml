@@ -1,7 +1,12 @@
 # Fleet bundle — Longhorn (Helm). See fleet-wiring-plan Phase 1.
 # HIGHEST-RISK adoption (storage). Roll out last, or keep monitor-only; pinned
-# to the running chart so adoption does not trigger an upgrade. values.yaml is
-# intentionally empty (chart defaults) but referenced for provenance.
+# to the running chart so adoption does not trigger an upgrade.
+#
+# values.yaml is NOT empty any more, and that matters: the cluster runs 1 volume
+# replica, the chart defaults to 3, and the difference never appeared in
+# `helm get values` because it had been set out-of-band. Adopting without those
+# two values would leave every new volume permanently Degraded on this
+# single-node cluster.
 defaultNamespace: longhorn-system
 helm:
   releaseName: longhorn

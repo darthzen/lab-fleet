@@ -1,4 +1,25 @@
-# Fleet bundle — Hermes agent (raw manifest). See fleet-wiring-plan Phase 1.
-# Slack AI agent; Slack/API tokens are referenced as Secrets and must exist
-# before this path is enabled or the workload reports not-ready.
+# Fleet bundle — Hermes agent + web UI (raw manifest). See fleet-wiring-plan
+# Phase 1. Slack AI agent on 8642 plus the community UI on 8787, exposed at
+# hermes.ash4d.com via Traefik + cert-manager (letsencrypt-dns).
+#
+# THREE Secrets must exist in the hermes namespace before this path is enabled,
+# or the pod will not start: hermes-api-key, hermes-slack, and hermes-webui.
+# The first two already exist; hermes-webui must be created — see
+# hermes-webui.secret.example.yaml.txt.
+#
+# Seed it with the password ALREADY in the live Deployment spec, so adoption does
+# not change the credential. Deliberate call on a throwaway lab: keeping the
+# value out of git is the requirement, not rotating it. Adopting this path still
+# restarts the pod once, because the env moves from an inline value to a
+# secretKeyRef — that is a pod template change. Rotate later if this stops being
+# throwaway.
 defaultNamespace: hermes
+
+# Raw-manifest bundle, but Fleet still deploys it via Helm internally — so
+# adopting the objects that are already on the cluster needs takeOwnership.
+# Without it the first sync fails: the live objects carry no
+# meta.helm.sh/release-name annotation, and Helm refuses to touch resources it
+# does not believe it owns. With it, adoption is metadata-only (Helm labels on
+# the top-level objects), so no pod template changes and no restarts.
+helm:
+  takeOwnership: true

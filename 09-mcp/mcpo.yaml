@@ -1,9 +1,25 @@
+# mcpo fans these streamable-HTTP MCP servers out to Open WebUI as OpenAPI
+# tools. `systemd` is off-cluster (host agent on the node itself), so it is a
+# raw IP rather than a service name.
 apiVersion: v1
 data:
-  config.json: "{\n  \"mcpServers\": {\n    \"k8s\": {\n      \"type\": \"streamable-http\"\
-    ,\n      \"url\": \"http://k8s-mcp-server.ai.svc.cluster.local:8080/mcp\"\n  \
-    \  },\n    \"systemd\": {\n      \"type\": \"streamable-http\",\n      \"url\"\
-    : \"http://192.168.7.149:8090/mcp\"\n    }\n  }\n}\n"
+  config.json: |
+    {
+      "mcpServers": {
+        "k8s": {
+          "type": "streamable-http",
+          "url": "http://k8s-mcp-server.ai.svc.cluster.local:8080/mcp"
+        },
+        "systemd": {
+          "type": "streamable-http",
+          "url": "http://192.168.7.149:8090/mcp"
+        },
+        "docs": {
+          "type": "streamable-http",
+          "url": "http://docs-rag-mcp.ai.svc.cluster.local:8080/mcp"
+        }
+      }
+    }
 kind: ConfigMap
 metadata:
   name: mcpo-config

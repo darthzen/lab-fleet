@@ -2,3 +2,12 @@
 # Lowest-risk adoption; the plan's Phase-3 starting path. Recreate strategy
 # (single RWO Longhorn writer).
 defaultNamespace: node-red
+
+# Raw-manifest bundle, but Fleet still deploys it via Helm internally — so
+# adopting the objects that are already on the cluster needs takeOwnership.
+# Without it the first sync fails: the live objects carry no
+# meta.helm.sh/release-name annotation, and Helm refuses to touch resources it
+# does not believe it owns. With it, adoption is metadata-only (Helm labels on
+# the top-level objects), so no pod template changes and no restarts.
+helm:
+  takeOwnership: true

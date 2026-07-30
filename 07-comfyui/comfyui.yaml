@@ -1,30 +1,3 @@
-# Startup hook run by comfyui-nvidia-docker's init on every container start
-# (after venv/ComfyUI setup, before the server launches). Keeps pip deps
-# self-healing across image upgrades and venv rebuilds.
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  labels:
-    app: comfyui
-  name: comfyui-user-script
-  namespace: ai
-data:
-  user_script.bash: |
-    #!/bin/bash
-    set -e
-    PIP=/comfy/mnt/venv/bin/pip
-
-    # 1. Self-heal: ensure every custom node's python deps are present
-    #    (no-op when satisfied; rebuilds them after a fresh venv).
-    for req in /basedir/custom_nodes/*/requirements.txt; do
-      [ -f "$req" ] && $PIP install --no-cache-dir -r "$req"
-    done
-
-    # 2. Version pins LAST so they win over whatever the steps above pulled.
-    #    torch 2.6 (cu124) breaks with transformers >= 4.54
-    #    (torch.float8_e8m0fnu). Revisit when the image moves to torch >= 2.7.
-    $PIP install --no-cache-dir "transformers==4.51.3"
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -33,7 +6,13 @@ metadata:
   name: comfyui
   namespace: ai
 spec:
-  replicas: 1
+  # SCALED TO ZERO on the cluster, and declared that way here on purpose: the
+  # GPU pin below is the same V100 that ollama holds with OLLAMA_KEEP_ALIVE=-1
+  # (see 04-ollama/values.yaml), so the two cannot both be resident. Scale to 1
+  # when you want ComfyUI and can afford to evict ollama's model.
+  # Fleet will hold this at 0 — bump it here, not with `kubectl scale`, or the
+  # next reconcile puts it back.
+  replicas: 0
   selector:
     matchLabels:
       app: comfyui
@@ -45,22 +24,30 @@ spec:
         app: comfyui
     spec:
       containers:
-      # NOTE: NVIDIA_VISIBLE_DEVICES (GPU pin) is deliberately NOT managed
-      # here — it is set live on the cluster and switched between GPUs as
-      # needed. If a future sync strips it, re-add via kubectl edit/patch.
+      # Env order below matches the live pod spec so a diff against the cluster
+      # stays readable.
       - env:
+        # GPU pin: the Tesla V100 32GB, NOT GPU 0 (a GTX 1070, 8GB). Declared
+        # here because ollama's chart pins the same UUID (04-ollama/values.yaml)
+        # and the pair is the whole reason this Deployment sits at replicas: 0.
+        # Previously left unmanaged so it could be switched by hand; that just
+        # meant helm/Fleet could silently strip it. Switch GPUs by editing here.
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: GPU-a69c6398-0353-3234-9f35-af0e02865f33
         - name: COMFY_CMDLINE_EXTRA
           value: --listen 0.0.0.0
-        - name: WANTED_UID
-          value: '1024'
-        - name: WANTED_GID
-          value: '1024'
         - name: BASE_DIRECTORY
           value: /basedir
         - name: SECURITY_LEVEL
           value: normal
         - name: USE_UV
           value: 'true'
+        - name: NVIDIA_DRIVER_CAPABILITIES
+          value: compute,utility
+        - name: WANTED_UID
+          value: '1024'
+        - name: WANTED_GID
+          value: '1024'
         image: mmartial/comfyui-nvidia-docker:ubuntu22_cuda12.4.1-latest
         imagePullPolicy: IfNotPresent
         name: comfyui
@@ -81,9 +68,6 @@ spec:
         - mountPath: /comfy/mnt
           name: data
           subPath: run
-        - mountPath: /comfy/mnt/user_script.bash
-          name: user-script
-          subPath: user_script.bash
       runtimeClassName: nvidia
       securityContext:
         fsGroup: 1024
@@ -96,10 +80,6 @@ spec:
       - name: data
         persistentVolumeClaim:
           claimName: comfyui-data
-      - name: user-script
-        configMap:
-          defaultMode: 0o755
-          name: comfyui-user-script
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -149,8 +129,11 @@ spec:
       - name: comfyui-data
         persistentVolumeClaim:
           claimName: comfyui-data
-      - emptyDir: {}
-        name: fb-config
+      # PVC, not emptyDir: filebrowser.db holds the user/auth state, so an
+      # emptyDir means a fresh admin password on every pod restart.
+      - name: fb-config
+        persistentVolumeClaim:
+          claimName: comfyui-filebrowser-config
 ---
 apiVersion: v1
 kind: Service
@@ -176,7 +159,7 @@ metadata:
   namespace: ai
 spec:
   ports:
-  - port: 8080
+  - port: 80
     targetPort: 8080
   selector:
     app: comfyui-filebrowser
@@ -198,6 +181,19 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
+  name: comfyui-filebrowser-config
+  namespace: ai
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: longhorn
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
   name: glm-model-pvc
   namespace: ai
 spec:
@@ -206,3 +202,6 @@ spec:
   resources:
     requests:
       storage: 50Gi
+  # Was unset here, which would have resolved to the default class (local-path)
+  # on a fresh apply; the bound volume is longhorn. Declared to match.
+  storageClassName: longhorn

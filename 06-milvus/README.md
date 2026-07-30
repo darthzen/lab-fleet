@@ -7,3 +7,7 @@
 Standalone mode (no Pulsar), single etcd replica, MinIO standalone — sized for
 a single-node lab. Attu provides the admin UI over the Milvus gRPC port. It
 lives in `attu/` as its own Fleet bundle, separate from the Milvus Helm release.
+
+Attu is a ClusterIP service reached over TLS at `attu.ash4d.com` through the
+Traefik ingress in `attu/attu.yaml`, with the certificate issued by cert-manager
+(`letsencrypt-dns`) — so it does not consume a MetalLB address.

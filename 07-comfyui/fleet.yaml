@@ -1,3 +1,15 @@
 # Fleet bundle — ComfyUI (raw manifests). See fleet-wiring-plan Phase 1.
-# GTX 1070 via the device plugin; manifests carry their own namespace.
+# Pinned to the V100 by UUID via runtimeClassName: nvidia (NOT the device
+# plugin); manifests carry their own namespace.
+# The Deployment is declared at replicas: 0 to match the cluster — ollama holds
+# that same V100. comfyui-user-script.yaml.txt is reference only, not bundled.
 defaultNamespace: ai
+
+# Raw-manifest bundle, but Fleet still deploys it via Helm internally — so
+# adopting the objects that are already on the cluster needs takeOwnership.
+# Without it the first sync fails: the live objects carry no
+# meta.helm.sh/release-name annotation, and Helm refuses to touch resources it
+# does not believe it owns. With it, adoption is metadata-only (Helm labels on
+# the top-level objects), so no pod template changes and no restarts.
+helm:
+  takeOwnership: true

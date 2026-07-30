@@ -39,10 +39,14 @@ spec:
         - containerPort: 8920
           name: https
         resources:
+          # No nvidia.com/gpu request on purpose (and none on the live pod):
+          # the GPU comes from runtimeClassName: nvidia plus the explicit
+          # NVIDIA_VISIBLE_DEVICES UUID above. Requesting the device-plugin
+          # resource would let it hand out whichever GPU it likes and would
+          # override the UUID pin — same trap documented in 04-ollama/values.yaml.
           limits:
             cpu: '6'
             memory: 8Gi
-            nvidia.com/gpu: '1'
           requests:
             cpu: 500m
             memory: 512Mi

@@ -23,6 +23,7 @@ spec:
         name: attu
         ports:
         - containerPort: 3000
+          name: 3000tcp
 ---
 apiVersion: v1
 kind: Service
@@ -37,4 +38,34 @@ spec:
     targetPort: 3000
   selector:
     app: attu
-  type: LoadBalancer
+  # ClusterIP, not LoadBalancer: attu is reached over TLS through the Traefik
+  # ingress below (attu.ash4d.com), so it does not need to burn a MetalLB IP.
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    # cert-manager issues/renews attu-ash4d-tls via the DNS-01 issuer.
+    cert-manager.io/cluster-issuer: letsencrypt-dns
+  labels:
+    app: attu
+  name: attu
+  namespace: ai
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: attu.ash4d.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: attu
+            port:
+              number: 3000
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - attu.ash4d.com
+    secretName: attu-ash4d-tls

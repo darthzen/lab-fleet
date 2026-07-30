@@ -1,0 +1,126 @@
+# Prometheus exporter + pass-through proxy in front of ollama.
+#
+# Two ports, two jobs:
+#   9400  /metrics — polls ollama every 15s for loaded-model / VRAM state
+#   9401  proxy    — a transparent reverse proxy to ollama:11434. Clients that
+#                    point here instead of at ollama directly get their request
+#                    volume and latency counted. The docs-rag MCP server
+#                    (09-mcp/docs-rag/) and all three indexers (08-indexer/)
+#                    are wired through 9401 for exactly this reason.
+#
+# Separate bundle path from ../ because 04-ollama is a Helm bundle and Fleet
+# allows one chart per path. Same split as 06-milvus/attu and 03-gpu/runtimeclass.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: ollama-exporter
+  name: ollama-exporter
+  namespace: ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ollama-exporter
+  template:
+    metadata:
+      labels:
+        app: ollama-exporter
+    spec:
+      containers:
+      - args:
+        - --config
+        - /etc/ollama-exporter/ollama-exporter.yml
+        # Built locally and pushed to the in-cluster Harbor (registry/ namespace,
+        # registry.ash4d.com), so this needs the harbor-pull imagePullSecret below
+        # — that Secret is created out-of-band and is NOT in this repo.
+        image: registry.ash4d.com/ash4d-lab/ollama-exporter:0.4.0-stream2
+        imagePullPolicy: Always
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: metrics
+          initialDelaySeconds: 10
+          periodSeconds: 20
+        name: exporter
+        ports:
+        - containerPort: 9400
+          name: metrics
+        - containerPort: 9401
+          name: proxy
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: metrics
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: '1'
+            memory: 256Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+        volumeMounts:
+        - mountPath: /etc/ollama-exporter
+          name: config
+          readOnly: true
+      imagePullSecrets:
+      - name: harbor-pull
+      volumes:
+      - configMap:
+          name: ollama-exporter-config
+        name: config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: ollama-exporter
+  name: ollama-exporter
+  namespace: ai
+spec:
+  # Pinned LB IP — dashboards and out-of-cluster scrapes target it directly.
+  loadBalancerIP: 192.168.7.160
+  ports:
+  - name: metrics
+    port: 9400
+    targetPort: metrics
+  - name: proxy
+    port: 9401
+    targetPort: proxy
+  selector:
+    app: ollama-exporter
+  type: LoadBalancer
+---
+# Exporter config. Note ollama_url points at ollama's ClusterIP service, and
+# exclude_paths keeps the exporter's own 15s polling out of the proxy metrics.
+apiVersion: v1
+data:
+  ollama-exporter.yml: |
+    ollama_url: "http://ollama.ai.svc.cluster.local:11434"
+    listen_addr: ":9400"
+    poll_interval: "15s"
+
+    metrics_endpoint:
+      enabled: true
+      listen_address: ":9400"
+
+    proxy:
+      enabled: true
+      listen_addr: ":9401"
+      exclude_paths:
+        - "/"
+        - "/api/ps"
+        - "/api/tags"
+        - "/api/show"
+        - "/api/version"
+
+    gpu:
+      enabled: false
+
+    log_level: "info"
+kind: ConfigMap
+metadata:
+  name: ollama-exporter-config
+  namespace: ai
