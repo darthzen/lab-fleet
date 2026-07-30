@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "a4760f5212f7",
+  "strategy": "manual-commit",
+  "branch": "fix-ollama-code-mcp-model",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "09-mcp/ollama-code/service.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a4/760f5212f7/0/metadata.json",
+      "transcript": "/a4/760f5212f7/0/full.jsonl",
+      "compact_transcript": "/a4/760f5212f7/0/transcript.jsonl",
+      "content_hash": "/a4/760f5212f7/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 13,
+    "cache_creation_tokens": 9478,
+    "cache_read_tokens": 717773,
+    "output_tokens": 5260,
+    "api_call_count": 7
+  }
+}
