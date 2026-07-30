@@ -1,0 +1,178 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: unsloth-studio
+  name: unsloth-studio
+  namespace: ai
+spec:
+  # DECLARED AT ZERO on purpose: the GPU pin below is the same V100 that ollama
+  # holds with OLLAMA_KEEP_ALIVE=-1 (see 04-ollama/values.yaml), so the two
+  # cannot both be resident. Scale to 1 when you want a fine-tuning session and
+  # can afford to evict ollama's model (procedure in README.md).
+  # Fleet will hold this at 0 — bump it here, not with `kubectl scale`, or the
+  # next reconcile puts it back.
+  replicas: 0
+  selector:
+    matchLabels:
+      app: unsloth-studio
+  # Recreate, not RollingUpdate: the data PVC is RWO and the GPU is exclusive,
+  # so old and new pods can never overlap.
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: unsloth-studio
+    spec:
+      containers:
+      - env:
+        # GPU pin: the Tesla V100 32GB, NOT GPU 0 (a GTX 1070, 8GB). Same UUID
+        # ollama's chart pins (04-ollama/values.yaml) — that pair is the whole
+        # reason this Deployment sits at replicas: 0.
+        # V100 is SM 7.0: fp16 only — no bf16, no flash-attention-2. Studio
+        # training runs must select fp16.
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: GPU-a69c6398-0353-3234-9f35-af0e02865f33
+        - name: NVIDIA_DRIVER_CAPABILITIES
+          value: compute,utility
+        # Jupyter (and the Studio UI's auth) password. Secret is created by
+        # hand, never committed — command in README.md. The image default
+        # ("unsloth") must never survive: jupyter.ash4d.com is code execution
+        # in a GPU pod behind this one credential.
+        - name: JUPYTER_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: JUPYTER_PASSWORD
+              name: unsloth-jupyter
+        # Steer the HF model/tokenizer cache under the single PVC mount so a
+        # pod restart never re-downloads base models. Everything that must
+        # survive a restart (datasets, checkpoints, adapters, HF cache) lives
+        # under /workspace/work.
+        - name: HF_HOME
+          value: /workspace/work/.hf-home
+        # Pinned tag == the `latest` digest verified 2026-07-30
+        # (sha256:f21629b9ae4e…). Upstream publishes versioned tags regularly;
+        # bump deliberately, never track latest — this is a ~13 GB pull.
+        image: unsloth/unsloth:2026.5.9-pt2.10.0-vllm-0.16.0-cu12.8-studio-release-v0.1.43-beta-2026-MAY-31
+        imagePullPolicy: IfNotPresent
+        name: unsloth-studio
+        ports:
+        - containerPort: 8000
+          name: studio
+        - containerPort: 8888
+          name: jupyter
+        # No nvidia.com/gpu request ON PURPOSE (the 04-ollama pattern, not
+        # comfyui's leftover request): requesting the device-plugin resource
+        # lets the plugin inject its own NVIDIA_VISIBLE_DEVICES and possibly
+        # hand out GPU 0. GPU access comes from runtimeClassName: nvidia plus
+        # the explicit UUID above.
+        # CPU/memory bounds are for the shared 64GB/16-thread single node —
+        # rationale in README.md.
+        resources:
+          limits:
+            cpu: '6'
+            memory: 28Gi
+          requests:
+            cpu: '2'
+            memory: 8Gi
+        volumeMounts:
+        - mountPath: /workspace/work
+          name: data
+          subPath: work
+      runtimeClassName: nvidia
+      # The image runs as the non-root `unsloth` user; Longhorn volumes mount
+      # root:root. fsGroup makes the mount group-writable for the container
+      # processes regardless of the image's exact UID.
+      securityContext:
+        fsGroup: 1000
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: unsloth-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: unsloth-studio
+  name: unsloth-studio
+  namespace: ai
+spec:
+  ports:
+  - name: studio
+    port: 8000
+    targetPort: 8000
+  - name: jupyter
+    port: 8888
+    targetPort: 8888
+  selector:
+    app: unsloth-studio
+  # ClusterIP, not LoadBalancer: both UIs are reached over TLS through the
+  # Traefik ingress below, so this does not need to burn a MetalLB IP.
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    # cert-manager issues/renews unsloth-ash4d-tls and jupyter-ash4d-tls via
+    # the DNS-01 issuer.
+    cert-manager.io/cluster-issuer: letsencrypt-dns
+  labels:
+    app: unsloth-studio
+  name: unsloth-studio
+  namespace: ai
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: unsloth.ash4d.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: unsloth-studio
+            port:
+              number: 8000
+        path: /
+        pathType: Prefix
+  # Jupyter on its own host, not a path under the Studio host — Jupyter's
+  # base-URL handling under a path prefix is fragile.
+  - host: jupyter.ash4d.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: unsloth-studio
+            port:
+              number: 8888
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - unsloth.ash4d.com
+    secretName: unsloth-ash4d-tls
+  - hosts:
+    - jupyter.ash4d.com
+    secretName: jupyter-ash4d-tls
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: unsloth-data
+  namespace: ai
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      # 100Gi: room for a couple of 13B-class fp16 base models in the HF cache
+      # plus datasets and LoRA checkpoint sets. Sized against Longhorn pool
+      # pressure (~412Gi of ~500Gi already allocated before this claim);
+      # Longhorn supports online expansion, so grow deliberately rather than
+      # over-claiming. Full-model (non-LoRA) fine-tuning checkpoints would blow
+      # this budget — that workload does not belong on this pool.
+      storage: 100Gi
+  # Explicit — the cluster default StorageClass is local-path, so omitting
+  # this is a bug (see the glm-model-pvc note in 07-comfyui/comfyui.yaml).
+  storageClassName: longhorn
