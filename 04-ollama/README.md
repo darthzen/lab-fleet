@@ -111,10 +111,13 @@ commands without `--context sdf1` land on the wrong cluster. (Older notes said
 ## ollama-exporter
 
 `ollama-exporter/` is a **separate Fleet bundle** (Fleet allows one chart per
-path, and this dir is a Helm bundle — same split as `06-milvus/attu`). The
-parent bundle excludes it via `.fleetignore`, so it is managed solely by its
-own `04-ollama/ollama-exporter` path entry in the `lab-ai` GitRepo. It does
-two things:
+path, and this dir is a Helm bundle — same split as `06-milvus/attu`). Its own
+`fleet.yaml` splits it out of the parent scan automatically — it is discovered
+via the `04-ollama` path entry, with **no explicit child path** in the `lab-ai`
+GitRepo. Do not add one: a `.fleetignore` does NOT suppress nested-bundle
+discovery, so listing both the parent and the child makes the gitjob write
+this bundle twice in one pass and fail on its own conflict (2026-07-30,
+three identical failures). It does two things:
 
 - **9400** — Prometheus metrics, polling Ollama every 15s for loaded-model and
   VRAM state.

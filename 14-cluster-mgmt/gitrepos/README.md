@@ -12,7 +12,7 @@ Applying any file here is a **single** adoption step, and idempotent once adopte
 no file holds more than one unadopted path (see the rule below). The exception is
 `lab-ai`, which has **no file at all** and is staged by hand — see below.
 
-> **🔴 Two corrections learned by breaking things on 2026-07-30. Read these
+> **🔴 Corrections learned by breaking things on 2026-07-30. Read these
 > before adopting anything.**
 >
 > **1. Removing a path does NOT roll back — it uninstalls.** For a bundle whose
@@ -34,7 +34,17 @@ no file holds more than one unadopted path (see the rule below). The exception i
 > `kubectl apply --server-side --dry-run=server`, which surfaces the
 > field-manager conflicts `kubectl diff` normalises away.
 >
-> Details and evidence for all three are in `FLEET-WIRING.md`.
+> **4. When adopting a parent path, remove the explicit child path in the SAME
+> patch.** With both `04-ollama/ollama-exporter` and `04-ollama` in
+> `spec.paths`, the gitjob wrote the exporter bundle twice in one pass and
+> died fatal on its own conflict ("object has been modified") — three
+> identical failures, unblocked only by dropping the child entry. This is
+> safe against correction 1: the parent scan still defines the bundle under
+> the identical name, so nothing uninstalls. A `.fleetignore` in the parent
+> does NOT prevent nested-bundle discovery — it filters bundle content only —
+> so it cannot be used to keep the pair.
+>
+> Details and evidence are in `FLEET-WIRING.md`.
 
 ## Convention: `lab-<namespace>`
 
@@ -135,14 +145,14 @@ kubectl --context rancher -n fleet-default patch gitrepo lab-ai --type=merge \
 and leave everything else alone:
 
 ```bash
-# Current live state — the five raw-manifest paths (adopted 2026-07-29).
-# Append exactly ONE entry per step, in this order:
-#   09-mcp/ollama-code → 04-ollama → 05-open-webui → 06-milvus
-#     → 21-unsloth-studio (fresh install, deploys immediately — prereqs in
-#       21-unsloth-studio/README.md)
+# Current live state, 2026-07-30 — after 04-ollama adoption. Note the explicit
+# 04-ollama/ollama-exporter entry is GONE: the parent path discovers it
+# (correction 4 above). Append exactly ONE entry per step, remaining order:
+#   05-open-webui → 06-milvus (drop the 06-milvus/attu entry in the same
+#   patch, per correction 4)
 kubectl --context rancher -n fleet-default patch gitrepo lab-ai --type=merge -p '{"spec":{"paths":[
-  "08-indexer","09-mcp","07-comfyui","06-milvus/attu","04-ollama/ollama-exporter",
-  "09-mcp/ollama-code"
+  "08-indexer","09-mcp","07-comfyui","06-milvus/attu","04-ollama",
+  "21-unsloth-studio"
 ]}}'
 ```
 
@@ -246,7 +256,7 @@ goal eventually but will fight this cluster's hand-tuning habits.
 | `lab-emby` | ✅ adopted 2026-07-29 — no-op, no restart |
 | `lab-resilio` | ✅ adopted 2026-07-29 — no-op, no restart |
 | `lab-hermes` | ✅ adopted 2026-07-29 — needed a manual pre-apply; one expected restart |
-| `lab-ai` | 🔶 **partial** — 5 raw paths adopted 2026-07-29 (all no-ops). The 3 Helm paths (`04-ollama`, `05-open-webui`, `06-milvus`) and `21-unsloth-studio` (fresh install, not an adoption) are **not yet added to the live GitRepo**. No `.yaml` file — patch `spec.paths` to widen |
+| `lab-ai` | 🔶 **partial** — 5 raw paths adopted 2026-07-29 (all no-ops); `04-ollama` Helm path adopted 2026-07-30 via SSA handoff (explicit exporter child entry removed per correction 4); `21-unsloth-studio` live. `05-open-webui` and `06-milvus` **not yet added**. No `.yaml` file — patch `spec.paths` to widen |
 | `lab-metallb-system` | not yet applied |
 | `lab-nvidia-device-plugin` | not yet applied |
 | `lab-cattle-monitoring-system` | not yet applied |
