@@ -1,0 +1,5 @@
+Read the handoff, then check the fleet implementation. Every one of the app bundles except lab-ai is erroring now. The error message for all four is: Get "https://github.com/darthzen/lab-fleet/info/refs?service=git-upload-pack": context deadline exceeded
+
+---
+
+In ~/Developer there are several projects that should probably be moved to lab-fleet, even if it's just as a subvolume. ash4d.com, buzz-relay, lab-memory, nemoclaw-ops-agent, and ollama-code-mcp are the ones that stand out so far.
