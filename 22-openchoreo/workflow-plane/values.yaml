@@ -1,0 +1,59 @@
+# OpenChoreo workflow plane — Argo Workflows as OpenChoreo's build engine.
+#
+# Upstream's k3d values (install/k3d/single-cluster/values-wp.yaml) enable the
+# Argo UI on a LoadBalancer at port 10081. That is dropped here: it would take
+# one of the five remaining MetalLB addresses to expose a second, unauthenticated
+# web UI for something the OpenChoreo portal already surfaces. Build status is
+# visible in Backstage; `kubectl -n openchoreo-workflow-plane get workflows`
+# covers the rest.
+
+clusterAgent:
+  # Must match `planeID` on the ClusterWorkflowPlane in ../registration/.
+  planeID: default
+  tls:
+    generateCerts: true
+    # 🔴 Not created by this chart — the control plane's cluster-gateway CA,
+    # copied in by hand once. Missing it leaves this pod in
+    # ContainerCreating. See README.md, "Bootstrap: propagating the
+    # cluster-gateway CA".
+    serverCAConfigMap: cluster-gateway-ca
+
+argo-workflows:
+  server:
+    # No Argo UI. See the header — upstream turns this on for k3d
+    # convenience; here it would cost a MetalLB address and add a second
+    # unauthenticated console. The `authModes: [server]` upstream pairs it
+    # with means no login at all, which is fine on a laptop and not here.
+    enabled: false
+
+  controller:
+    # THE GUARDRAIL. Caps concurrent workflows on a node that is also running
+    # LLM inference on a V100, milvus, and emby transcodes. Argo's default is
+    # unlimited, which on a 16-thread box shared with those is how a build
+    # storm becomes an inference outage.
+    #
+    # This limits workflow COUNT, not CPU — one buildpack build can still use
+    # many cores. If builds interfere with anything else, drop this to 1
+    # first; it is the cheapest lever here.
+    parallelism: 2
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+    # Reap finished workflows rather than accumulating pods and their logs.
+    # The node's containerd is shared with ~13 GB unsloth images and the
+    # locally-built indexer images (08-indexer), so build leftovers are a real
+    # disk concern, not a tidiness one.
+    workflowDefaults:
+      spec:
+        ttlStrategy:
+          secondsAfterCompletion: 3600
+          secondsAfterSuccess: 3600
+          secondsAfterFailure: 86400
+        podGC:
+          strategy: OnWorkflowCompletion

@@ -1,0 +1,139 @@
+# OpenBao — the secret backend OpenChoreo reads through External Secrets.
+#
+# Vendored from the OpenChoreo repo at release-v1.2
+# (install/k3d/common/values-openbao.yaml), with the sample-app secrets
+# dropped and the k3d-only OpenObserve entries dropped (this lab uses the
+# OpenSearch modules, not OpenObserve — see ../observability-logs/).
+#
+# ─── Why dev mode ────────────────────────────────────────────────────────────
+# `server.dev.enabled: true` means in-memory storage, auto-unsealed, with a
+# fixed root token. The postStart hook below re-runs on every pod start, so
+# the auth backend, the two policies, the two roles and every seeded key are
+# rebuilt automatically after any restart.
+#
+# The alternative was `server.standalone` with file storage on a Longhorn PVC.
+# It persists, but a sealed OpenBao is indistinguishable from a broken one to
+# everything downstream: after every node reboot, ExternalSecrets would stop
+# resolving and Backstage and the observer would come up without credentials,
+# until someone typed the unseal keys by hand. There is no auto-unseal without
+# a KMS. For a single-node lab that nobody is paged for, "reseeds itself" beats
+# "persists but needs a human", so dev mode is the deliberate choice.
+#
+# The corollary is in fleet.yaml and it is not optional reading: secrets added
+# to this store by hand, or through OpenChoreo's own secret-management UI, do
+# not survive a restart. Only what is written below does.
+#
+# The root token is `root`. In dev mode that is OpenBao's well-known constant,
+# not a credential — the API is ClusterIP-only and nothing routes to it from
+# the gateway. Do not "fix" it by setting a different literal here; if this
+# ever needs to be a real vault, the fix is file storage plus a real unseal
+# procedure, not a different dev token.
+#
+# ─── Why the seeded values are in git ────────────────────────────────────────
+# 🔴 These are OpenChoreo's UPSTREAM FIXTURE CREDENTIALS, published in
+# github.com/openchoreo/openchoreo, and every one of them must byte-match the
+# corresponding client_secret in ../thunder/values.yaml or the OIDC handshake
+# fails. That coupling is why they are literals here rather than env vars from
+# a hand-created Secret: Thunder's matching values live inside a 34 KB
+# bootstrap shell script in its own values file, so parameterising one side
+# without the other would just move the problem.
+#
+# Acceptable here because the three OpenChoreo hostnames resolve to
+# 192.168.7.150 — a LAN address — so none of this is internet-reachable. If
+# that changes, rotate BOTH files together. Full procedure in README.md,
+# "Rotating the fixture credentials". This and ../thunder/values.yaml are the
+# only two files in this repo that carry credential values on purpose.
+
+injector:
+  enabled: false
+
+server:
+  dev:
+    enabled: true
+    devRootToken: root
+
+  # Single-node lab: one pod, modest envelope. The chart's default requests
+  # are unset, which on this node would let it schedule anywhere; being
+  # explicit keeps it accounted for alongside ollama and milvus.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Runs on every pod start. Everything here must be idempotent, because in
+  # dev mode this IS the restore path — there is no persisted state to fall
+  # back on.
+  postStart:
+    - /bin/sh
+    - -c
+    - |
+      sleep 5
+      export BAO_ADDR=http://127.0.0.1:8200
+      export BAO_TOKEN=root
+
+      bao auth enable kubernetes 2>/dev/null || true
+      bao write auth/kubernetes/config \
+        kubernetes_host="https://$KUBERNETES_PORT_443_TCP_ADDR:443"
+
+      bao policy write openchoreo-secret-reader-policy - <<POLICY
+      path "secret/data/*" { capabilities = ["read"] }
+      path "secret/metadata/*" { capabilities = ["list", "read"] }
+      POLICY
+
+      bao policy write openchoreo-secret-writer-policy - <<POLICY
+      path "secret/data/*" { capabilities = ["create", "read", "update", "delete"] }
+      path "secret/metadata/*" { capabilities = ["create", "read", "update", "delete", "list"] }
+      POLICY
+
+      # Reader: the `dp*` namespace glob is how OpenChoreo names the
+      # namespaces it creates for deployed components, so this is the role a
+      # developer's workload authenticates with.
+      bao write auth/kubernetes/role/openchoreo-secret-reader-role \
+        bound_service_account_names=default \
+        bound_service_account_namespaces="dp*" \
+        policies=openchoreo-secret-reader-policy ttl=20m
+
+      # Writer: ESO authenticates as the external-secrets-openbao SA in this
+      # namespace (see ../secret-store/), and the workflow plane writes build
+      # credentials.
+      bao write auth/kubernetes/role/openchoreo-secret-writer-role \
+        bound_service_account_names="*" \
+        bound_service_account_namespaces="openbao,openchoreo-workflow-plane" \
+        policies=openchoreo-secret-writer-policy ttl=20m
+
+      # Backstage (the developer portal). backend-secret signs its own
+      # sessions; client-secret is its OIDC confidential-client secret and
+      # MUST equal the openchoreo-backstage-client secret in
+      # ../thunder/values.yaml. The jenkins/github entries are placeholders —
+      # ../control-plane/values.yaml leaves both external-CI integrations
+      # disabled — but the ExternalSecret in ../control-plane-extras/ lists
+      # all five keys, so all five must exist or it never goes Ready.
+      bao kv put secret/backstage-backend-secret value="local-dev-backend-secret"
+      bao kv put secret/backstage-client-secret value="backstage-portal-secret"
+      bao kv put secret/backstage-jenkins-api-key value="placeholder-not-in-use"
+      bao kv put secret/backstage-github-actions-token value="placeholder-not-in-use"
+      bao kv put secret/backstage-github-oauth-client-secret value="placeholder-not-in-use"
+
+      # Observer (the observability plane's query API). Must equal the
+      # openchoreo-observer-resource-reader-client secret in
+      # ../thunder/values.yaml.
+      bao kv put secret/observer-oauth-client-secret value="openchoreo-observer-resource-reader-client-secret"
+
+      # OpenSearch admin credentials. Must equal
+      # openSearch.extraEnvs OPENSEARCH_INITIAL_ADMIN_PASSWORD in
+      # ../observability-logs/values.yaml — that env var seeds the OpenSearch
+      # security index on FIRST START ONLY, so changing one side later needs
+      # an OpenSearch-side password reset, not just a redeploy.
+      bao kv put secret/opensearch-username value="admin"
+      bao kv put secret/opensearch-password value="ThisIsTheOpenSearchPassword1"
+
+      # RCA and FinOps agents are disabled in
+      # ../observability-plane/values.yaml (both want an LLM endpoint and both
+      # cost ~1 GiB). Seeded anyway so enabling them is a values change with
+      # no OpenBao work — and so these stay next to the Thunder clients they
+      # must match.
+      bao kv put secret/rca-oauth-client-secret value="openchoreo-rca-agent-secret"
+      bao kv put secret/finops-agent-oauth-client-secret value="openchoreo-finops-agent-secret"

@@ -1,0 +1,42 @@
+# Fleet bundle — OpenChoreo data plane (Helm).
+#
+# Where deployed components actually run. Two pieces: a kgateway Gateway that
+# fronts every workload OpenChoreo deploys, and `cluster-agent-dataplane`, a
+# websocket client that dials the control plane's cluster-gateway over mTLS
+# and is how this plane is driven.
+#
+# Chart 1.2.1, pinned to match ../control-plane/. The planes are versioned and
+# released together; do not bump one without the other.
+#
+# On this single-node cluster the "data plane" is the same node as the control
+# plane. That is the supported single-cluster topology (upstream's own
+# install/k3d/single-cluster), not a compromise — the separation is by
+# namespace and by agent, not by machine.
+#
+# 🔴 TWO PREREQUISITES THAT ARE NOT SATISFIED BY ENABLING PATHS IN ORDER:
+#
+# 1. The `cluster-gateway-ca` ConfigMap must exist in openchoreo-data-plane
+#    before the agent pod starts. The agent mounts it by name
+#    (`clusterAgent.tls.serverCAConfigMap`) to verify the control plane's
+#    cluster-gateway. cert-manager mints that CA in the CONTROL PLANE's
+#    namespace, so it does not exist until ../control-plane/ has run and
+#    cannot be committed to this repo. Without it the agent pod stays in
+#    ContainerCreating. One command, in README.md under "Bootstrap:
+#    propagating the cluster-gateway CA".
+#
+# 2. Registration. A running agent is not a registered plane — the control
+#    plane also needs a ClusterDataPlane object naming this plane's client CA.
+#    That is ../registration/, which is declarative only because the CRD
+#    accepts `clientCA.secretKeyRef` with a cross-namespace `namespace` field.
+#    See that bundle.
+#
+# Enable ../data-plane-extras/ alongside this for the workload ingress — but
+# note that bundle needs a DNS record that does not exist yet (README.md).
+defaultNamespace: openchoreo-data-plane
+helm:
+  releaseName: openchoreo-data-plane
+  chart: oci://ghcr.io/openchoreo/helm-charts/openchoreo-data-plane
+  version: "1.2.1"
+  valuesFiles:
+    - values.yaml
+  takeOwnership: true

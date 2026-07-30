@@ -1,0 +1,46 @@
+# Build registry for the OpenChoreo workflow plane.
+#
+# Derived from install/k3d/single-cluster/values-registry.yaml at
+# release-v1.2, with the LoadBalancer dropped and storage made explicit.
+
+# Upstream sets this so the Service is reachable as `registry` — workflow
+# templates address it by that name. Keep it.
+fullnameOverride: registry
+
+service:
+  # Upstream uses `type: LoadBalancer, port: 10082` so a k3d host can docker
+  # push into it. Nothing outside this cluster needs that, and MetalLB's
+  # lan-pool had five free addresses when this was written. ClusterIP.
+  type: ClusterIP
+  port: 5000
+
+persistence:
+  enabled: true
+  # Explicit, because this cluster has TWO default StorageClasses —
+  # `local-path` and `longhorn` are both annotated
+  # storageclass.kubernetes.io/is-default-class: true (observed 2026-07-30).
+  # An unset storageClassName is therefore genuinely ambiguous here, not a
+  # safe default. Longhorn so build output survives a node reboot the way
+  # every other stateful workload in this repo does.
+  storageClass: longhorn
+  size: 20Gi
+
+# Build output only. Nothing here cannot be rebuilt from source, so this is
+# sized to hold a working set rather than a history — see the deleteEnabled
+# note below.
+deleteEnabled: true
+
+# `registry:2` garbage collection is not automatic: deleting a manifest frees
+# the tag, not the blobs. With deleteEnabled above, OpenChoreo can delete
+# manifests, but blob storage still grows until a `registry garbage-collect`
+# runs. On a 20Gi volume that is months away, not days — but it is the reason
+# this claim will eventually need attention, and the reason it is 20Gi and not
+# 5Gi. Longhorn supports online expansion if it fills.
+
+resources:
+  requests:
+    cpu: 20m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

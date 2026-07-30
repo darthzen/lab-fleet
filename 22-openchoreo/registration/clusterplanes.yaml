@@ -1,0 +1,105 @@
+# Registration of the three non-control planes with the control plane.
+#
+# Every `clientCA` below is a REFERENCE, not an inlined PEM. Upstream's
+# installer shells out for each CA and pastes it in; the v1.2.1 CRDs also
+# accept `secretKeyRef` with a cross-namespace `namespace`, which is what
+# keeps this file committable. See fleet.yaml.
+#
+# The referenced Secret in each case is `cluster-agent-tls`, issued by
+# cert-manager in that plane's own namespace because each plane chart sets
+# `clusterAgent.tls.generateCerts: true`. The key is always `ca.crt`.
+#
+# `planeID: default` must match `clusterAgent.planeID` in the corresponding
+# plane's values.yaml. They are joined by that string.
+
+apiVersion: openchoreo.dev/v1alpha1
+kind: ClusterDataPlane
+metadata:
+  name: default
+spec:
+  planeID: default
+  clusterAgent:
+    clientCA:
+      secretKeyRef:
+        name: cluster-agent-tls
+        namespace: openchoreo-data-plane
+        key: ca.crt
+  # The ESO ClusterSecretStore deployed components resolve their secrets
+  # through — ../secret-store/. Cluster-scoped, so the name alone is enough.
+  secretStoreRef:
+    name: default
+  # Sends this plane's telemetry to the observability plane registered below.
+  observabilityPlaneRef:
+    kind: ClusterObservabilityPlane
+    name: default
+  gateway:
+    ingress:
+      external:
+        # Identifies the Gateway OpenChoreo attaches component HTTPRoutes to.
+        name: gateway-default
+        namespace: openchoreo-data-plane
+        http:
+          # The suffix component hostnames are built from: a component in
+          # project `p` environment `e` becomes something like
+          # `<component>-<...>.apps.openchoreo.ash4d.com`, matching the
+          # wildcard in ../data-plane-extras/ingress.yaml.
+          #
+          # The nested `apps.` label is deliberate. The lab's wildcard covers
+          # everything under openchoreo.ash4d.com at any depth, so components
+          # COULD sit directly under it — but then a component named `api` or
+          # `observer` would mint a hostname that collides with the control
+          # plane's own (api.openchoreo.ash4d.com,
+          # observer.openchoreo.ash4d.com) and Traefik's choice between the
+          # two Ingresses would be undefined. `apps.` keeps the developer-
+          # controlled namespace disjoint from the platform's.
+          host: apps.openchoreo.ash4d.com
+          # The listener on the Gateway object, named `http` by the data-plane
+          # chart. Port 80 because ../data-plane/values.yaml puts the gateway
+          # on standard ports; upstream's k3d values say 19080 for host-port
+          # reasons that do not apply here.
+          listenerName: http
+          port: 80
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: ClusterWorkflowPlane
+metadata:
+  name: default
+spec:
+  planeID: default
+  clusterAgent:
+    clientCA:
+      secretKeyRef:
+        name: cluster-agent-tls
+        namespace: openchoreo-workflow-plane
+        key: ca.crt
+  # Builds write image-pull and registry credentials through the same store.
+  # ../openbao/values.yaml's writer role deliberately binds
+  # `openchoreo-workflow-plane` alongside `openbao` for exactly this.
+  secretStoreRef:
+    name: default
+  observabilityPlaneRef:
+    kind: ClusterObservabilityPlane
+    name: default
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: ClusterObservabilityPlane
+metadata:
+  name: default
+spec:
+  planeID: default
+  clusterAgent:
+    clientCA:
+      secretKeyRef:
+        name: cluster-agent-tls
+        namespace: openchoreo-observability-plane
+        key: ca.crt
+  # In-cluster Service URL, not the public observer.openchoreo.ash4d.com name.
+  # This is the control plane calling the observer server-side; routing it out
+  # through Traefik and back would add a TLS hop and a dependency on public
+  # DNS for a call that never leaves the node. The public name exists for the
+  # browser (Backstage's observability tab) — see
+  # ../observability-extras/ingress.yaml.
+  observerURL: "http://observer.openchoreo-observability-plane.svc.cluster.local:8080"
+  # rcaAgentURL and finOpsAgentURL are deliberately unset: both agents are
+  # disabled in ../observability-plane/values.yaml (each wants an LLM endpoint
+  # and ~1 GiB). Add them here when those are turned on.

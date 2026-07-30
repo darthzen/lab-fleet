@@ -58,6 +58,39 @@ adopted, rolled back, or paused independently of every other.
 | `lab-cattle-monitoring-system` | `cattle-monitoring-system` | `03-gpu/dcgm-exporter` | med |
 | `lab-cert-manager` | `cert-manager` | `15-cert-manager` (+ nested `/issuer`) | **ADOPTED** 2026-07-30 after an SSA ownership handoff — owns the 6 CRDs, never delete |
 | `lab-longhorn-system` | `longhorn-system` | `02-longhorn` | **highest — adopt last** |
+| `lab-openchoreo` | 7 namespaces | 20 paths under `22-openchoreo` | **fresh install, not an adoption** — one GitRepo per *product*, see below |
+
+## `lab-openchoreo` owns seven namespaces, on purpose
+
+It is the one exception to `lab-<namespace>`. OpenChoreo spans
+`openchoreo-control-plane`, `-data-plane`, `-workflow-plane`,
+`-observability-plane`, `thunder`, `openbao` and `external-secrets`, and those
+are not independently useful — the planes register with each other over mTLS
+and a data plane without a control plane is nothing. Seven GitRepos would mean
+seven knobs that must always move together.
+
+Two things make it unlike every other entry in the table:
+
+- **Nothing is being adopted.** No OpenChoreo release existed on the cluster
+  first, so the SSA field-ownership pre-flight in `FLEET-WIRING.md` does not
+  apply — there is no `helm` field manager to hand over from. Each path
+  *deploys* the moment it lands. What replaces the pre-flight is ordering, and
+  it is strict.
+- **One step Fleet cannot do.** The control plane's cluster-gateway CA has to
+  be copied into the other three plane namespaces by hand, because it does not
+  exist until the control plane has run. Skip it and three agent pods sit in
+  `ContainerCreating`.
+
+Its file, like `lab-ai`'s staging commands, holds **stage 1 only** —
+`22-openchoreo/external-secrets`. Widen with `kubectl patch`, one path at a
+time, in the order in `22-openchoreo/README.md`. **Do not re-apply
+`lab-openchoreo.yaml` after widening**: it resets `spec.paths` back to one
+entry, which is the same trap that restarted a failing loop on
+`lab-lab-memory` on 2026-07-30.
+
+`22-openchoreo` itself must never appear in `spec.paths` — a nested
+`fleet.yaml` deploys as soon as its parent does, so the parent path would
+deploy all twenty bundles at once.
 
 Adopt in that order. Within `lab-ai`, add paths one at a time — raw manifests
 (`08-indexer`, `09-mcp`, `07-comfyui`, `06-milvus/attu`,

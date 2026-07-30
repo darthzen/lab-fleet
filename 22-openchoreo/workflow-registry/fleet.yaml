@@ -1,0 +1,51 @@
+# Fleet bundle — build registry for the workflow plane (Helm).
+#
+# Where OpenChoreo pushes the images its builds produce, and where the data
+# plane pulls them from. Plain `registry:2` via the twuni chart, which is what
+# OpenChoreo's own single-cluster installer uses.
+#
+# ─── THIS CLUSTER ALREADY HAS A REGISTRY, AND THIS IS NOT IT ─────────────────
+# Harbor runs at registry.ash4d.com in the `registry` namespace and already
+# serves this cluster — 04-ollama/ollama-exporter pulls its image from there
+# with the `harbor-pull` Secret. Using Harbor for OpenChoreo builds would be
+# the better long-term answer: one registry, real authentication, scanning,
+# retention.
+#
+# It is not what this bundle does, for reasons that are about this repo rather
+# than about Harbor:
+#
+#   - Harbor is deliberately OUT of lab-fleet. FLEET-WIRING.md records why: its
+#     objects are Helm-labelled but have no release Secret and no
+#     meta.helm.sh/release-name, so the chart and values cannot be recovered
+#     the way buzz's and openshell's were. Its install is unreconstructed.
+#   - Wiring builds to it needs a robot account and a push Secret that exist
+#     only on the cluster, so the interesting half of the configuration could
+#     not live here anyway.
+#   - A build pushing to Harbor on every commit changes the retention and disk
+#     behaviour of a registry that is already load-bearing for the `ai`
+#     namespace. That is a decision worth making deliberately, not as a side
+#     effect of standing up OpenChoreo.
+#
+# So this is a small, isolated, throwaway registry whose blast radius is
+# OpenChoreo alone. Switching to Harbor later is a change to the workflow
+# templates' push target plus an imagePullSecret — this bundle can then be
+# deleted outright, which is safe precisely because nothing else uses it.
+#
+# ClusterIP, unlike upstream's LoadBalancer on port 10082: k3d needs a host
+# port, this cluster does not, and MetalLB's lan-pool had five free addresses.
+# Nothing outside the cluster needs to reach this.
+#
+# 🔴 NO AUTHENTICATION. `registry:2` with no htpasswd, reachable by anything
+# in the cluster that can resolve its Service. Acceptable only because it is
+# ClusterIP-only and holds nothing but rebuildable build output. Do not expose
+# it through Traefik, and do not start pushing anything to it you would mind
+# another namespace reading.
+defaultNamespace: openchoreo-workflow-plane
+helm:
+  releaseName: registry
+  repo: https://twuni.github.io/docker-registry.helm
+  chart: docker-registry
+  version: "2.2.3"
+  valuesFiles:
+    - values.yaml
+  takeOwnership: true

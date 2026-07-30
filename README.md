@@ -45,13 +45,14 @@ flowchart TD
         CERTMGR[15 cert-manager<br/>letsencrypt-dns DNS-01]
     end
 
-    subgraph more["16-21 — Applications"]
+    subgraph more["16-22 — Applications"]
         ORIGIN[16 ash4d.com origin]
         BUZZ[17 Buzz relay<br/>+ MinIO]
         MEMORY[18 lab-memory<br/>Karakeep + MCP]
         NEMO[19 NemoClaw<br/>RBAC · netpol]
         OPENSHELL[20 OpenShell<br/>agent gateway]
         UNSLOTH[21 Unsloth Studio<br/>fine-tuning GUI / V100]
+        CHOREO[22 OpenChoreo IDP<br/>4 planes · 20 bundles]
     end
 
     host --> platform --> ai --> apps
@@ -101,10 +102,11 @@ flowchart TD
 | 19 | NemoClaw ops-agent scaffolding (RBAC/netpol) | raw manifests | — |
 | 20 | OpenShell agent gateway | **vendored** chart `helm-chart` | 0.0.0-dev |
 | 21 | Unsloth Studio (fine-tuning GUI) — scaled to 0 | unsloth/unsloth | 2026.5.9 (studio v0.1.43-beta) |
+| 22 | OpenChoreo IDP (4 planes + kgateway/ESO/OpenBao/Thunder) | ghcr.io/openchoreo/helm-charts | 1.2.1 |
 
 ### Directory numbers 15+ are append-order, not install-order
 
-`15`–`20` were added after the original `00`–`14` tree and are numbered in the
+`15`–`22` were added after the original `00`–`14` tree and are numbered in the
 order they were adopted, not their true position in a dependency graph.
 **cert-manager (15) actually installs before almost everything** — it issues the
 TLS for `attu` (06), `hermes` (10), `lab-memory` (18) and `registry`, so on a
@@ -114,8 +116,16 @@ path and every cross-reference in the docs, for a cosmetic gain.
 
 Real dependency order for the new components:
 
-    15-cert-manager  →  16, 17, 18, 21   (anything terminating TLS in-cluster)
+    15-cert-manager  →  16, 17, 18, 21, 22  (anything terminating TLS in-cluster)
     19-nemoclaw      →  20-openshell (openshell writes into nemoclaw-sandboxes)
+
+`22-openchoreo` is a whole platform rather than an application: 20 Fleet paths
+across seven namespaces, with a strict internal order of its own and one
+manual bootstrap step Fleet cannot perform (propagating the control plane's
+cluster-gateway CA to the other three planes). It is also the only component
+that deliberately commits credential values — OpenChoreo's public upstream
+fixtures, on LAN-only hostnames. Read `22-openchoreo/README.md` before
+enabling any of it.
 
 One chart, OpenShell (20), is **vendored** (committed under `20-openshell/chart/`)
 rather than pulled from a repo — a departure from `04`/`05`/`06`. The running

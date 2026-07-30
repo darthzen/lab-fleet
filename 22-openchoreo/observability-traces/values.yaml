@@ -1,0 +1,24 @@
+# Traces — OTel collector writing spans into the shared OpenSearch.
+
+# 🔴 THE LOAD-BEARING LINE. This chart CAN run its own OpenSearch; it must
+# not. ../observability-logs/ already runs one and this writes into it.
+# Turning this on starts a second JVM with a second PVC on a single node that
+# was at 74% memory when this was written. Upstream's installer sets the same
+# flag for the same reason.
+openSearch:
+  enabled: false
+
+# The setup Job authenticates to the logs OpenSearch with the shared
+# credentials from ../observability-extras/externalsecrets.yaml.
+openSearchSetup:
+  openSearchSecretName: opensearch-admin-credentials
+
+opentelemetry-collector:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 100Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi

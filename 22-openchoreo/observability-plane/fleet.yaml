@@ -1,0 +1,45 @@
+# Fleet bundle — OpenChoreo observability plane (Helm).
+#
+# The query layer: the `observer` API that Backstage's logs, traces, metrics
+# and alerts panels talk to, plus a controller-manager and
+# `cluster-agent-observabilityplane`. It stores nothing itself — the actual
+# telemetry backends are the four sibling module bundles:
+#
+#   ../observability-logs     OpenSearch + fluent-bit   (container logs)
+#   ../observability-traces   OTel collector -> OpenSearch (traces)
+#   ../observability-metrics  PrometheusAgent           (metrics)
+#   ../observability-events   OTel collector -> OpenSearch (k8s events)
+#
+# Chart 1.2.1, pinned to match the other planes.
+#
+# ─── This is the heaviest thing in 22-openchoreo ─────────────────────────────
+# The observer itself is small. OpenSearch is not. When this scope was chosen,
+# sdf1 was at 74% memory (48 GiB of 64 GiB) with ollama, milvus, comfyui,
+# emby and the k3s control plane resident. Budget roughly 2-3 GiB for the
+# OpenSearch instance in ../observability-logs plus the collectors, on top of
+# ~1 GiB for the plane itself.
+#
+# Enable the four module bundles ONE AT A TIME and watch `kubectl top node`
+# between each. If memory becomes a problem, ../observability-metrics is the
+# cheapest to drop (Rancher's Prometheus already scrapes this cluster) and
+# ../observability-traces the next (it reuses the logs OpenSearch but adds a
+# tail-sampling collector).
+#
+# PREREQUISITES:
+#   ../observability-extras — the observer-secret ExternalSecret. The chart
+#                             REFUSES TO RENDER without observer.secretName,
+#                             so enable that path first.
+#   the `cluster-gateway-ca` ConfigMap in openchoreo-observability-plane —
+#                             same manual copy as the other planes, README.md.
+#   ../registration         — the ClusterObservabilityPlane. Enable last.
+#
+# The chart also brings a CRD (ObservabilityAlertsNotificationChannel), so the
+# usual rule applies: pause the GitRepo to roll back, do not remove the path.
+defaultNamespace: openchoreo-observability-plane
+helm:
+  releaseName: openchoreo-observability-plane
+  chart: oci://ghcr.io/openchoreo/helm-charts/openchoreo-observability-plane
+  version: "1.2.1"
+  valuesFiles:
+    - values.yaml
+  takeOwnership: true

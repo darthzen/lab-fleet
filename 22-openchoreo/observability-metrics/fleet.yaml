@@ -1,0 +1,62 @@
+# Fleet bundle — metrics: Prometheus for OpenChoreo (Helm).
+#
+# Chart 0.6.1 — OpenChoreo v1.2's installer pin. Bundles
+# kube-prometheus-stack 81.6.3 (prometheus-operator v0.88.1) as a subchart,
+# plus a metrics adapter the observer queries and an Alertmanager route that
+# webhooks OpenChoreo's alerts back into that adapter.
+#
+# 🔴 THE HIGHEST-RISK PATH IN 22-openchoreo. ENABLE IT LAST, ON ITS OWN, AND
+# BE WILLING TO DROP IT.
+#
+# ─── The collision ───────────────────────────────────────────────────────────
+# THIS CLUSTER ALREADY RUNS kube-prometheus-stack. `rancher-monitoring`
+# (rancher-monitoring-109.0.2+up80.9.1, prometheus-operator v0.87.1) lives in
+# cattle-monitoring-system, its CRDs are owned by the separate
+# `rancher-monitoring-crd` release, and 03-gpu/dcgm-exporter already feeds it.
+# Installed with upstream's defaults, this chart would:
+#
+#   1. claim the ten monitoring.coreos.com CRDs that rancher-monitoring-crd
+#      owns — two Helm releases, one set of cluster-scoped objects; and
+#   2. run a SECOND prometheus-operator. Rancher's has no --namespaces
+#      restriction (verified 2026-07-30), so both would reconcile every
+#      Prometheus, Alertmanager and ServiceMonitor in the cluster, at two
+#      different operator versions, rewriting each other's StatefulSets.
+#
+# That is the `03-gpu/runtimeclass` failure mode with Rancher's monitoring
+# stack as the blast radius. values.yaml therefore disables both the CRDs and
+# the bundled operator, and lets RANCHER's operator reconcile the Prometheus
+# and Alertmanager objects this chart declares. One operator, two Prometheus
+# instances.
+#
+# ─── The residual risk, stated plainly ───────────────────────────────────────
+# That leaves a version skew: the chart is built for operator v0.88.1 and
+# Rancher's CRDs are v0.87.1. Defaults do not appear to use v0.88-only fields,
+# so it should apply — but "should" is doing real work in that sentence, and
+# this is the one bundle here whose failure mode reaches OUTSIDE OpenChoreo.
+# Verify before trusting it:
+#
+#     kubectl -n openchoreo-observability-plane get prometheus,alertmanager
+#     kubectl -n cattle-monitoring-system get prometheus,statefulset   # unchanged?
+#     kubectl -n cattle-monitoring-system logs deploy/rancher-monitoring-operator --tail=50
+#
+# If Rancher's own Prometheus StatefulSet churns, or its operator logs errors
+# about OpenChoreo's objects, remove this path immediately — it is a raw
+# Helm release Fleet created itself, with no adopted state, so removing it is
+# safe here (the FLEET-WIRING.md warning about path removal applies to bundles
+# that took ownership of a PRE-EXISTING release; this is not one).
+#
+# ─── It is also the most droppable ───────────────────────────────────────────
+# Without it: Backstage's logs and traces panels still work
+# (../observability-logs/, ../observability-traces/); the metrics panels are
+# empty. Rancher's Grafana at 192.168.7.152 still shows everything it always
+# did, including GPU metrics. On a node that was at 74% memory when this was
+# written, running a second cluster-wide Prometheus for one portal tab is a
+# defensible thing to say no to.
+defaultNamespace: openchoreo-observability-plane
+helm:
+  releaseName: observability-metrics-prometheus
+  chart: oci://ghcr.io/openchoreo/helm-charts/observability-metrics-prometheus
+  version: "0.6.1"
+  valuesFiles:
+    - values.yaml
+  takeOwnership: true

@@ -1,0 +1,54 @@
+# Fleet bundle — OpenChoreo control plane (Helm). The core of the platform.
+#
+# Five workloads: the controller-manager (reconciles the 36 OpenChoreo CRDs),
+# the OpenChoreo API server, the Backstage developer portal, the
+# cluster-gateway (the mTLS endpoint every other plane's agent dials home to),
+# and the event-forwarder.
+#
+# Chart 1.2.1 == appVersion v1.2.1, the release published 2026-07-30. Pinned,
+# not floating: ghcr.io/openchoreo/helm-charts also publishes mutable
+# `0.0.0-latest-dev` and ~1000 content-addressed `0.0.0-<sha>` tags, and the
+# 20-openshell lesson in FLEET-WIRING.md is that a mutable tag is not a pin.
+#
+# 🔴 THIS BUNDLE OWNS 36 CLUSTER-SCOPED CRDs (chart `crds/` directory). Same
+# hazard class as 15-cert-manager: deleting this path uninstalls the release,
+# which takes the CRDs and therefore every Project, Component, Workload and
+# plane-registration object in the cluster. Pause the GitRepo to stop Fleet
+# acting; never remove the path to "roll back". See FLEET-WIRING.md.
+#
+# THE CHART REFUSES TO RENDER WITH PLACEHOLDER HOSTNAMES. templates/validate.yaml
+# hard-fails on any `.invalid` domain and on a missing backstage.secretName, so
+# a half-configured values.yaml is a render error on the controller, not a
+# broken deployment on the cluster. Convenient, but it also means this path
+# cannot be enabled "to see what happens".
+#
+# PREREQUISITES, all of which must be live before this path is enabled:
+#   ../kgateway-crds, ../kgateway-params, ../kgateway  — the Gateway it renders
+#   ../external-secrets, ../openbao, ../secret-store   — the backstage-secrets
+#                                                        ExternalSecret
+#   ../control-plane-extras                            — that ExternalSecret,
+#                                                        plus the Certificate
+#                                                        and Traefik Ingress
+#   15-cert-manager + its letsencrypt-dns ClusterIssuer — TLS, and the
+#                                                        self-signed Issuer
+#                                                        chain for the
+#                                                        cluster-gateway's
+#                                                        internal mTLS
+# Enable ../control-plane-extras FIRST. Backstage will not start without the
+# Secret, and the chart will not render without `backstage.secretName` naming it.
+#
+# POST-INSTALL, AND IT IS NOT OPTIONAL: the other three planes' agents verify
+# this plane's cluster-gateway against a ConfigMap named `cluster-gateway-ca`
+# that must exist in each of their namespaces. cert-manager mints that CA here,
+# in this namespace, so it cannot be committed — it does not exist until this
+# bundle has run. One command per plane namespace, in README.md under
+# "Bootstrap: propagating the cluster-gateway CA". Until it is done, the data,
+# workflow and observability planes come up but never register.
+defaultNamespace: openchoreo-control-plane
+helm:
+  releaseName: openchoreo-control-plane
+  chart: oci://ghcr.io/openchoreo/helm-charts/openchoreo-control-plane
+  version: "1.2.1"
+  valuesFiles:
+    - values.yaml
+  takeOwnership: true

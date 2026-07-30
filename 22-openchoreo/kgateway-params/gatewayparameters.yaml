@@ -1,0 +1,40 @@
+# Class-wide defaults for every Gateway of GatewayClass `kgateway`.
+#
+# Wired in by ../kgateway/values.yaml:
+#   gatewayClassParametersRefs:
+#     kgateway:
+#       name: openchoreo-shared-gwp
+#       namespace: openchoreo-control-plane
+#
+# so it applies to all three OpenChoreo Gateways (control, data and
+# observability planes) without any of them declaring
+# spec.infrastructure.parametersRef.
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: GatewayParameters
+metadata:
+  name: openchoreo-shared-gwp
+  namespace: openchoreo-control-plane
+spec:
+  kube:
+    service:
+      # THE WHOLE POINT OF THIS FILE. kgateway's default is LoadBalancer,
+      # which would take three addresses from MetalLB's lan-pool
+      # (192.168.7.150-169, five free). Traefik at 192.168.7.150 is where the
+      # ash4d.com DNS records point, and it reaches these Gateways over
+      # ClusterIP — so no OpenChoreo Gateway needs an address of its own.
+      # Reverting this to LoadBalancer will silently consume the remaining
+      # pool and change nothing about how traffic actually arrives.
+      type: ClusterIP
+
+    # Envoy proxy pods, one per Gateway (three of them). The chart ships no
+    # resource block at all, which on this node means they schedule
+    # unaccounted-for next to ollama, milvus and emby. These are proxies
+    # fronting a lab-scale portal, not a production edge.
+    envoyContainer:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 500m
+          memory: 256Mi

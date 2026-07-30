@@ -1,0 +1,51 @@
+# Traefik ingress for every component OpenChoreo deploys.
+#
+# Same two-hop shape as ../control-plane-extras/ingress.yaml — Traefik
+# terminates TLS and forwards to a kgateway Gateway Service over ClusterIP,
+# and kgateway does the real per-component routing against the HTTPRoutes the
+# OpenChoreo controller creates as things are deployed.
+#
+# Covered by the existing `*.openchoreo.ash4d.com` wildcard — verified
+# 2026-07-30 that it answers at arbitrary depth (`q.apps.openchoreo.ash4d.com`
+# -> 192.168.7.150), so no additional DNS record is needed. See fleet.yaml for
+# why component hostnames sit under `apps.` rather than directly under
+# `openchoreo.`.
+#
+# The backend Service `gateway-default` is provisioned by kgateway for the
+# Gateway of the same name in this namespace, and does not exist until
+# ../data-plane/ has been deployed. Traefik 503s until then — expected, not a
+# fault. Verify the name on first deploy:
+#
+#     kubectl -n openchoreo-data-plane get svc,gateway
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openchoreo-apis
+  namespace: openchoreo-data-plane
+  annotations:
+    # ingress-shim issues the wildcard from the tls block below, DNS-01 via
+    # Cloudflare. A wildcard is only possible with DNS-01, which is what
+    # 15-cert-manager/issuer's letsencrypt-dns ClusterIssuer already does —
+    # an HTTP-01 issuer could not serve this at all.
+    cert-manager.io/cluster-issuer: letsencrypt-dns
+spec:
+  ingressClassName: traefik
+  rules:
+    # One wildcard rule. Individual component hostnames are created and
+    # destroyed by OpenChoreo as components are deployed and removed, so
+    # enumerating them here would mean editing this repo on every deploy —
+    # exactly what the platform exists to avoid.
+    - host: "*.apps.openchoreo.ash4d.com"
+      http:
+        paths:
+          - backend:
+              service:
+                name: gateway-default
+                port:
+                  number: 80
+            path: /
+            pathType: Prefix
+  tls:
+    - hosts:
+        - "*.apps.openchoreo.ash4d.com"
+      secretName: openchoreo-apps-ash4d-tls

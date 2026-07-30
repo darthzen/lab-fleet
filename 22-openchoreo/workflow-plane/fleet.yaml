@@ -1,0 +1,44 @@
+# Fleet bundle — OpenChoreo workflow plane (Helm). The build plane.
+#
+# Argo Workflows (subchart argo-workflows 1.0.18) plus
+# `cluster-agent-workflowplane`. This is what turns a git repo into a
+# container image: OpenChoreo submits Workflows here to check out source,
+# build with buildpacks, and push to a registry.
+#
+# Chart 1.2.1, pinned to match the other planes.
+#
+# 🔴 THIS IS THE ONE BUNDLE IN 22-openchoreo THAT CAN DESTABILISE THE NODE.
+# Everything else here is a handful of long-lived, small, well-bounded pods.
+# Builds are transient, unbounded and CPU- and disk-hungry: a buildpack build
+# will happily take every core it is given. sdf1 is a single 16-thread 3700X
+# already at ~50% CPU requests and 74% memory, running ollama's V100
+# inference, milvus, emby transcodes and the k3s control plane.
+#
+# The Argo controller's `parallelism` limit below is the guardrail — it caps
+# concurrent workflows, not CPU. If builds start starving other workloads, cut
+# it to 1 before anything else. Nothing in this repo pins build pods away from
+# the GPU workloads, so a long build genuinely does compete with ollama.
+#
+# PREREQUISITES:
+#   ../workflow-registry — where built images are pushed. Enable it first;
+#                          builds fail at the push step without it.
+#   the `cluster-gateway-ca` ConfigMap in openchoreo-workflow-plane — same
+#                          manual copy as the data plane, see README.md.
+#   ../registration      — the ClusterWorkflowPlane. Enable last.
+#
+# WORKFLOW TEMPLATES ARE NOT INCLUDED. Upstream's installer also applies four
+# sample WorkflowTemplates from `samples/getting-started/`, two of which are
+# k3d-specific (`publish-image-k3d`, `generate-workload-k3d`) and hardcode a
+# k3d registry address. They are sample content rather than cluster state, so
+# they are deliberately out of this repo — see README.md, "What is
+# deliberately not here". Without them, builds have no template to run: apply
+# the non-k3d pair by hand, or write templates that push to
+# ../workflow-registry.
+defaultNamespace: openchoreo-workflow-plane
+helm:
+  releaseName: openchoreo-workflow-plane
+  chart: oci://ghcr.io/openchoreo/helm-charts/openchoreo-workflow-plane
+  version: "1.2.1"
+  valuesFiles:
+    - values.yaml
+  takeOwnership: true

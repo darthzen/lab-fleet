@@ -1,0 +1,36 @@
+# Fleet bundle — OpenBao (Helm). OpenChoreo prerequisite 2 of 4.
+#
+# The secret backend behind the `default` ClusterSecretStore
+# (../secret-store/). Every OpenChoreo credential — Backstage's backend and
+# OIDC client secrets, the observer's OAuth secret, the OpenSearch admin
+# password — is read from here by an ExternalSecret and handed to the pods as
+# an ordinary Secret. It is also the store OpenChoreo offers *developers* for
+# their own component secrets, via `secretStoreRef` on the ClusterDataPlane in
+# ../registration/.
+#
+# Chart 0.25.6 matches OpenChoreo v1.2's installer pin.
+#
+# 🔴 THIS RUNS IN DEV MODE — IN-MEMORY, NO PERSISTENCE. That is a deliberate
+# choice, not an oversight, and it is the single most important thing to know
+# about this bundle. Read the header of values.yaml before changing it: the
+# alternative (file storage) trades "reseeds itself automatically" for "seals
+# on every pod restart and must be manually unsealed before OpenChoreo's
+# credentials resolve again". On an unattended single-node lab that is the
+# worse failure mode. The cost is that OpenBao holds no state you can add to
+# by hand and expect to survive — anything you put in it must be added to the
+# postStart script in values.yaml.
+#
+# Consequence worth stating plainly: a node reboot or an OpenBao pod restart
+# wipes the store and reseeds it from values.yaml. ExternalSecrets re-resolve
+# on their next refresh (1h) or immediately if you delete them. Nothing is
+# lost, because nothing unique is stored — but a developer secret added
+# through the OpenChoreo UI IS unique, and WILL be lost. Do not use this
+# deployment's secret management for anything you cannot recreate.
+defaultNamespace: openbao
+helm:
+  releaseName: openbao
+  chart: oci://ghcr.io/openbao/charts/openbao
+  version: "0.25.6"
+  valuesFiles:
+    - values.yaml
+  takeOwnership: true
