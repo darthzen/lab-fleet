@@ -1,10 +1,10 @@
 # Fleet bundle — MCP layer (raw manifests): mcpo, k8s-mcp-server (plus its
-# cluster-scoped read-only RBAC), github-mcp-server, and docs-rag-mcp (in
-# docs-rag/, bundled here since it has no fleet.yaml of its own).
+# cluster-scoped read-only RBAC), github-mcp-server, fossa-mcp, and docs-rag-mcp
+# (in docs-rag/, bundled here since it has no fleet.yaml of its own).
 # See fleet-wiring-plan Phase 1.
-# The github-mcp token Secret is referenced by name and must be created
-# out-of-band — the example is github-mcp-token.secret.example.yaml.txt,
-# renamed to .txt so Fleet never applies it.
+# The github-mcp and fossa-mcp token Secrets are referenced by name and must be
+# created out-of-band — the examples are *-token.secret.example.yaml.txt,
+# renamed to .txt so Fleet never applies them.
 defaultNamespace: ai
 
 # Raw-manifest bundle, but Fleet still deploys it via Helm internally — so

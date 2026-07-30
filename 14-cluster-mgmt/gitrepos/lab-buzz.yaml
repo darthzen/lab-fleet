@@ -21,14 +21,20 @@
 # race on the same _acme-challenge TXT record at renewal. See
 # 17-buzz/fleet.yaml.
 #
-# STAGED: this file carries ONLY `17-buzz`, so applying it is a single
-# adoption step and stays idempotent. `17-buzz/minio` is deliberately left
-# out — see gitrepos/README.md on why a GitRepo file must never hold more
-# than one unadopted path. Add the second path after the first is verified
-# Ready:
+# NOT STAGED — and it cannot be. `17-buzz/minio` is a CHILD of
+# `17-buzz`, and Fleet deploys a nested path as soon as its parent is
+# adopted: the nested fleet.yaml splits it into its own bundle, but that
+# bundle is still rendered under the parent's path entry. Applying this
+# file therefore brings BOTH paths up at once. Verified 2026-07-30.
 #
-#   kubectl --context rancher -n fleet-default patch gitrepo lab-buzz \
-#     --type=merge -p '{"spec":{"paths":["17-buzz","17-buzz/minio"]}}'
+# Do not try to gate the child by leaving it out of spec.paths; it has no
+# effect. Gating only works for SIBLING paths (cf. 01-networking and
+# 01-networking/pools). See FLEET-WIRING.md.
+#
+# 🔴 And do NOT roll back by removing a path once adoption has succeeded:
+#    for a bundle whose Helm release Fleet owns, that UNINSTALLS the
+#    release. Use spec.paused instead. This deleted karakeep on
+#    2026-07-30 -- see FLEET-WIRING.md.
 apiVersion: fleet.cattle.io/v1alpha1
 kind: GitRepo
 metadata:

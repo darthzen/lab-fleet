@@ -1,0 +1,13 @@
+# nemoclaw namespace — the agent's blast-radius boundary.
+# Pod Security Admission set to 'restricted' so the OpenShell sandbox port
+# (securityContext / readOnlyRootFilesystem / non-root) is enforced by the
+# platform, not just by convention. See docs/openshell-k8s.md.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nemoclaw
+  labels:
+    app.kubernetes.io/part-of: nemoclaw-ops-agent
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

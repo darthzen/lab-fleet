@@ -1,0 +1,68 @@
+# sa-nemoclaw-deploy — used by deploy-type build tickets.
+# Scope: full admin INSIDE the nemoclaw namespace only, plus cluster-read on
+# CRD *definitions* (so a deploy agent can discover schemas it must apply).
+# It deliberately has NO read/write on any other namespace and NO access to
+# cluster-scoped workload resources. Negative tests are in deploy/rbac/TESTS.md.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sa-nemoclaw-deploy
+  namespace: nemoclaw
+  labels:
+    app.kubernetes.io/part-of: nemoclaw-ops-agent
+---
+# Namespace-admin within nemoclaw only.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nemoclaw-deploy-nsadmin
+  namespace: nemoclaw
+  labels:
+    app.kubernetes.io/part-of: nemoclaw-ops-agent
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nemoclaw-deploy-nsadmin
+  namespace: nemoclaw
+  labels:
+    app.kubernetes.io/part-of: nemoclaw-ops-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nemoclaw-deploy-nsadmin
+subjects:
+  - kind: ServiceAccount
+    name: sa-nemoclaw-deploy
+    namespace: nemoclaw
+---
+# Cluster-read on CRD definitions ONLY (not the custom resources themselves).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nemoclaw-deploy-crd-read
+  labels:
+    app.kubernetes.io/part-of: nemoclaw-ops-agent
+rules:
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nemoclaw-deploy-crd-read
+  labels:
+    app.kubernetes.io/part-of: nemoclaw-ops-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nemoclaw-deploy-crd-read
+subjects:
+  - kind: ServiceAccount
+    name: sa-nemoclaw-deploy
+    namespace: nemoclaw

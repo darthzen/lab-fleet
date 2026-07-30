@@ -117,8 +117,21 @@ postgresql:
     storageClass: longhorn
 
 # ── Redis (only strictly required above 1 replica; here so scaling is easy) ─
+#
+# updateStrategy.rollingUpdate is nulled out because the subchart's default,
+# maxUnavailable: 1, is a field this cluster's API server SILENTLY DISCARDS.
+# `kubernetes_feature_enabled{name="MaxUnavailableStatefulSet"}` is 0 here, so
+# the field never lands. Fleet then compares its rendered manifest against live,
+# sees the field missing forever, and reports the bundle `Modified` on every
+# reconcile — permanently, with no way to converge. Verified with a server-side
+# dry-run patch: the field comes back stripped.
+#
+# Nulling it changes nothing about the running cluster (updateStrategy is not
+# part of the pod template, so no roll) and lets the bundle reach nonModified.
 redis:
   enabled: true
+  updateStrategy:
+    rollingUpdate: null
   persistence:
     enabled: true
     size: 4Gi
