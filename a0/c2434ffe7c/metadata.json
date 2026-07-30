@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "a0c2434ffe7c",
+  "strategy": "manual-commit",
+  "branch": "fleet-unsloth-studio",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "14-cluster-mgmt/gitrepos/README.md",
+    "21-unsloth-studio/README.md",
+    "21-unsloth-studio/fleet.yaml",
+    "21-unsloth-studio/unsloth-studio.yaml",
+    "README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a0/c2434ffe7c/0/metadata.json",
+      "transcript": "/a0/c2434ffe7c/0/full.jsonl",
+      "compact_transcript": "/a0/c2434ffe7c/0/transcript.jsonl",
+      "content_hash": "/a0/c2434ffe7c/0/content_hash.txt",
+      "prompt": "/a0/c2434ffe7c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 35,
+    "cache_creation_tokens": 86406,
+    "cache_read_tokens": 1380635,
+    "output_tokens": 28189,
+    "api_call_count": 19
+  }
+}
