@@ -14,8 +14,8 @@ Verified against the live cluster **2026-07-29**.
   local `kubectl` context named **`rancher`** already has API access to them —
   no Rancher API token needed (see Phase 0).
 - **This cluster** — `sdf1`, downstream `c-nnzn9` at **192.168.7.149**.
-  `fleet-agent v0.15.4` is Ready but idle — its only bundle is its own
-  `fleet-agent-c-nnzn9`, so no GitRepo targets it yet.
+  `fleet-agent v0.15.4`'s pod is Running, but it has **never registered** — see
+  the blocker section below. Its only bundle is its own `fleet-agent-c-nnzn9`.
 - Deploy source is **`lab-fleet` directly**, not `ash4d.com/lab` (Fleet doesn't
   init git submodules, so a GitRepo on `ash4d.com` would clone an empty gitlink).
   Public repo → no clone secret needed.
@@ -81,26 +81,72 @@ targets:
         ash4d-lab: ""
 ```
 
-## ⏭ Phase 2/3 — GitRepo + staged rollout (approve each widen)
+## 🛑 BLOCKER — fleet-agent registration is broken
 
-Create a GitRepo in `fleet-default` pointing at
-`https://github.com/darthzen/lab-fleet`, branch `main`. **Start narrow** with a
-single low-risk `paths:` entry, then widen one component at a time, riskiest
-last:
+Found 2026-07-29 while applying the first GitRepo. **Fleet cannot deploy anything
+to this cluster until this is fixed.** Bundles reach `WaitApplied` and sit there;
+the BundleDeployment gets no status at all, because the downstream agent never
+picks it up.
 
-| Order | Component(s) | Risk | Note |
-|---|---|---|---|
-| 1 | `12-node-red`, `13-resilio`, `11-emby` | low | app layer, easy rollback |
-| 2 | `07-comfyui`, `09-mcp`, `10-hermes` | low–med | Secrets must pre-exist |
-| 3 | `08-indexer`, `04-ollama/ollama-exporter` | low–med | CronJobs + Harbor pull secret |
-| 4 | `05-open-webui`, `06-milvus`, `04-ollama` | med | helm adopt; watch pod churn |
-| 5 | `01-networking`, `03-gpu` | med–high | MetalLB/Traefik + GPU; net blips |
-| 6 | `02-longhorn` | **high** | storage — adopt last, or monitor-only |
+```
+Failed to register agent: registration failed: cannot create clusterregistration
+on management cluster ... tls: failed to verify certificate: x509: failed to load
+system roots and no roots provided; open /dev/null: not a directory
+```
 
-At each step: add the path, let Fleet render, confirm the BundleDeployment goes
-Ready, spot-check the workload, proceed. Roll back by removing the path.
+Diagnosis — it is a policy mismatch, not a network or image problem:
 
-Leave `correctDrift` unset at first. Turning it on makes Fleet revert
+| Check | Result |
+|---|---|
+| Agent → Rancher network | ✅ `wget https://rancher.ash4d.com/ping` returns `pong` |
+| CA roots in the agent image | ✅ 435 certs in `/var/lib/ca-certificates/pem` |
+| Rancher server cert | ✅ valid, public **Let's Encrypt** (`CN=YR1`, expires 2026-10-15) |
+| `agent-tls-mode` (controller) | ⚠️ **`strict`** (Rancher default) |
+| `apiServerCA` in `fleet-agent-bootstrap` | ❌ **empty, 0 bytes** |
+
+`strict` mode requires an explicitly-provided CA and will not fall back to system
+roots. With `apiServerCA` empty, registration can never succeed — regardless of
+the fact that the cert is publicly trusted.
+
+Two fixes:
+
+**A — switch to the system trust store** (matches a publicly-trusted Rancher cert,
+and is Rancher's supported configuration for one):
+
+```bash
+kubectl --context rancher patch settings.management.cattle.io agent-tls-mode   --type=merge -p '{"value":"system-store"}'
+```
+
+Controller-wide: it affects **every** downstream agent, not just sdf1. Agents
+redeploy their bootstrap config afterwards.
+
+**B — populate `apiServerCA`** with the Let's Encrypt chain and keep `strict`.
+Scoped to this cluster, but must be redone whenever the issuing CA rotates.
+
+A is the better fit here; B is the choice if some other downstream depends on
+strict mode. **Not applied — this is a controller-wide setting on a separate
+host, so it needs a deliberate call.**
+
+Worth noting the other downstream (`cluster-ee8f7993b3a6`) last checked in
+2026-07-17, the same day the Rancher cert was renewed. It may be broken for the
+same reason, which would make A a fix for both.
+
+## ⏭ Phase 2/3 — GitRepos + staged rollout (approve each widen)
+
+**One GitRepo per namespace, named `lab-<namespace>`** — see
+`gitrepos/README.md` for the full table, rollout order, and the manifests
+themselves. Each namespace can be adopted, rolled back, or paused independently.
+
+Order: `lab-node-red` → `lab-emby` / `lab-resilio` → `lab-hermes` → `lab-ai`
+(eight paths, one at a time) → `lab-metallb-system` /
+`lab-nvidia-device-plugin` / `lab-cattle-monitoring-system` →
+`lab-longhorn-system` last.
+
+At each step: apply (or add a path), let Fleet render, confirm the
+BundleDeployment goes Ready, spot-check the workload, proceed. Roll back by
+removing the path or deleting the GitRepo.
+
+Leave `correctDrift` disabled at first. Turning it on makes Fleet revert
 out-of-band `kubectl edit`s — desirable eventually, but it will fight the
 hand-tuning habits this cluster has (see the ComfyUI and Ollama notes below).
 
@@ -158,11 +204,22 @@ hand-tuning habits this cluster has (see the ComfyUI and Ollama notes below).
 Controller (this is where bundle state actually lives):
 
 ```bash
-kubectl --context rancher -n fleet-default get gitrepo lab-fleet \
-  -o jsonpath='{.status.summary}'
+# Is the agent even registered? Empty lastSeen = the blocker above.
+kubectl --context rancher -n fleet-default get cluster c-nnzn9 \
+  -o jsonpath='{.status.agent.lastSeen}'
+
+kubectl --context rancher -n fleet-default get gitrepo lab-node-red \
+  -o jsonpath='{.status.display.state}|{.status.display.readyBundleDeployments}'
 kubectl --context rancher get bundles -A
 kubectl --context rancher -n cluster-fleet-default-c-nnzn9-eaf6ebdbb298 \
   get bundledeployments
+```
+
+A bundle stuck in `WaitApplied` with an empty BundleDeployment status means the
+agent is not consuming it — check agent registration before debugging the bundle:
+
+```bash
+kubectl -n cattle-fleet-system logs deploy/fleet-agent --tail=20
 ```
 
 The old note said to run `kubectl -n cattle-fleet-system get bundledeployments`
