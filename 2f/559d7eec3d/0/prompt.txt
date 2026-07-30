@@ -1,0 +1,1 @@
+It's time to start the work of getting these officially tied to fleet. Use the kubernetes mcp to verify the existing state of all the services. If they deviate from what's persisted to the repo, update the repo to match the live state.

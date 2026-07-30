@@ -1,0 +1,63 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "2f559d7eec3d",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "02-longhorn/fleet.yaml",
+    "02-longhorn/values.yaml",
+    "04-ollama/README.md",
+    "04-ollama/ollama-exporter/fleet.yaml",
+    "04-ollama/ollama-exporter/ollama-exporter.yaml",
+    "05-open-webui/fleet.yaml",
+    "05-open-webui/values.yaml",
+    "06-milvus/README.md",
+    "06-milvus/attu/attu.yaml",
+    "06-milvus/attu/fleet.yaml",
+    "07-comfyui/README.md",
+    "07-comfyui/comfyui-user-script.yaml.txt",
+    "07-comfyui/comfyui.yaml",
+    "07-comfyui/fleet.yaml",
+    "08-indexer/README.md",
+    "08-indexer/fleet.yaml",
+    "08-indexer/k8s-docs-indexer.yaml",
+    "08-indexer/logicpro-docs-indexer.yaml",
+    "08-indexer/suse-docs-indexer.yaml",
+    "09-mcp/README.md",
+    "09-mcp/docs-rag/README.md",
+    "09-mcp/docs-rag/docs-rag-mcp.yaml",
+    "09-mcp/fleet.yaml",
+    "09-mcp/k8s-mcp-server.yaml",
+    "09-mcp/mcpo.yaml",
+    "09-mcp/retrieval-tool/Dockerfile",
+    "09-mcp/retrieval-tool/README.md",
+    "09-mcp/retrieval-tool/__pycache__/retrieval_tool.cpython-310.pyc",
+    "09-mcp/retrieval-tool/requirements.txt",
+    "09-mcp/retrieval-tool/retrieval-tool.yaml",
+    "09-mcp/retrieval-tool/retrieval_tool.py",
+    "10-hermes/README.md",
+    "10-hermes/fleet.yaml",
+    "10-hermes/hermes-webui.secret.example.yaml.txt",
+    "10-hermes/hermes.yaml",
+    "11-emby/emby.yaml",
+    "14-cluster-mgmt/FLEET-WIRING.md",
+    "README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/2f/559d7eec3d/0/metadata.json",
+      "transcript": "/2f/559d7eec3d/0/full.jsonl",
+      "compact_transcript": "/2f/559d7eec3d/0/transcript.jsonl",
+      "content_hash": "/2f/559d7eec3d/0/content_hash.txt",
+      "prompt": "/2f/559d7eec3d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 234,
+    "cache_creation_tokens": 211882,
+    "cache_read_tokens": 19104926,
+    "output_tokens": 106165,
+    "api_call_count": 126
+  }
+}
