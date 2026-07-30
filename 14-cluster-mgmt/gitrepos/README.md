@@ -45,10 +45,12 @@ Every raw-manifest `fleet.yaml` sets `helm.takeOwnership: true`, and every Helm
 reconciled against live state, so a first sync should only add Helm ownership
 labels to the top-level objects — no pod template changes, no restarts.
 
-The one exception is `lab-hermes`: `HERMES_WEBUI_PASSWORD` moves from an inline
-value to a `secretKeyRef`, which *is* a pod template change, so that pod restarts
-once. Seed the Secret with the value already in the live spec and the credential
-itself does not change.
+The one exception was `lab-hermes`: `HERMES_WEBUI_PASSWORD` moved from an inline
+value to a `secretKeyRef`, a pod template change, so that pod restarted once. It
+also could not be adopted directly — Helm's merge patch cannot remove a live
+`env.value` on an object it does not yet own, so the manifest had to be
+`kubectl apply`'d by hand first. See the adoption log in `../FLEET-WIRING.md`.
+Resolved; the credential did not change.
 
 `correctDrift` is off in every file. Turn it on only after everything is adopted
 and verified — it makes Fleet revert out-of-band `kubectl edit`s, which is the
@@ -58,8 +60,19 @@ goal eventually but will fight this cluster's hand-tuning habits.
 
 | GitRepo | State |
 |---|---|
-| `lab-node-red` | ✅ **adopted 2026-07-29** — verified no-op, no pod restart |
-| everything else | not yet applied |
+| `lab-node-red` | ✅ adopted 2026-07-29 — no-op, no restart |
+| `lab-emby` | ✅ adopted 2026-07-29 — no-op, no restart |
+| `lab-resilio` | ✅ adopted 2026-07-29 — no-op, no restart |
+| `lab-hermes` | ✅ adopted 2026-07-29 — needed a manual pre-apply; one expected restart |
+| `lab-ai` | not yet applied |
+| `lab-metallb-system` | not yet applied |
+| `lab-nvidia-device-plugin` | not yet applied |
+| `lab-cattle-monitoring-system` | not yet applied |
+| `lab-longhorn-system` | not yet applied |
+
+`c-nnzn9` (sdf1) is the only Fleet-managed downstream; the junk
+`cluster-ee8f7993b3a6` was deleted 2026-07-29. So the `ash4d-lab: ""` selector in
+these files resolves to exactly one cluster.
 
 ## Prerequisite: the fleet-agent must be able to register
 
