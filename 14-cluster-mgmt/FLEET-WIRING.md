@@ -227,6 +227,37 @@ detail in `22-openchoreo/README.md`; the parts that generalise beyond it:
 
 ## Watch-outs
 
+- **`Bound` does not mean a Longhorn replica was ever scheduled, and the
+  cluster's real storage limit is not free disk space.** Longhorn schedules
+  replicas against `(storageMaximum - storageReserved) x over-provisioning%`.
+  On sdf1 (2026-07-30) that was 764 GiB with 759 GiB already scheduled — 5 GiB
+  of headroom against 411 GiB of genuinely free disk. A PVC over that line
+  still reports `Bound`; its volume goes `faulted` with
+  `ReplicaSchedulingFailure: insufficient storage`, and the pod sits in
+  `ContainerCreating` with only `AttachVolume.Attach failed ... not ready for
+  workloads` to go on. Check the real state:
+
+  ```bash
+  kubectl -n longhorn-system get volumes.longhorn.io <pv-name> \
+    -o jsonpath='{.status.state}/{.status.robustness}'
+  kubectl -n longhorn-system get nodes.longhorn.io <node> -o json   # budget math
+  ```
+
+  Three consequences worth knowing before the next storage-hungry bundle:
+
+  - **An unschedulable claim is a claim on *future* budget.** `ai/unsloth-data`
+    (100 GiB, never run, `actualSize 0`) had been silently unscheduled for
+    hours. The instant 128 GiB was freed for OpenChoreo it took 100 GiB of it
+    within the same second. Freeing budget does not mean the intended workload
+    gets it. It was shrunk to 70 GiB on 2026-07-30 for this reason.
+  - **A brand-new faulted volume does not self-heal once budget appears.** Its
+    failed replica keeps it `faulted` and auto-salvage refuses with `no data
+    exists`. Delete the failed replica CR and Longhorn rebuilds — but confirm
+    `actualSize: 0` and an empty `lastAttachedBy` first, because on a volume
+    that *has* data this is destructive.
+  - **Shrinking a PVC is delete-and-recreate.** Kubernetes permits expansion
+    only. Cheap while a claim is empty; a backup and restore once it is not.
+
 - **A `${...}` anywhere in a values file is a Fleet template, and a bundle that
   contains one fails to *target* — it never reaches the cluster.** Fleet
   pre-processes helm values as a Go template with `${` `}` delimiters, so any

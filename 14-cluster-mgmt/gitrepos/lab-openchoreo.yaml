@@ -19,17 +19,20 @@
 # So this is one GitRepo per PRODUCT, staged by `spec.paths` — the same
 # mechanism `lab-ai` uses, for the same reason.
 #
-# ─── 🔴 THIS FILE IS STAGE 1 ONLY. RE-APPLYING IT LATER RESETS spec.paths ────
-# `paths` below holds the FIRST path only. The remaining nineteen are patched
-# in one at a time (see gitrepos/README.md and 22-openchoreo/README.md).
+# ─── ✅ ROLLOUT COMPLETE 2026-07-30 — this file now matches the live GitRepo ──
+# `paths` below holds ALL TWENTY paths, in install order, and is what is
+# actually running on the cluster. Re-applying this file is now SAFE and is
+# the correct way to reconcile the GitRepo.
 #
-# That means: once you have widened the live GitRepo, DO NOT `kubectl apply -f`
-# this file again — it will narrow `spec.paths` straight back to one entry.
-# FLEET-WIRING.md records this exact mistake being made on lab-lab-memory on
-# 2026-07-30, where re-applying a GitRepo file to add `pollingInterval` silently
-# reverted a hand-narrowed `spec.paths` and restarted a failing retry loop.
+# It was not safe during the staged rollout. Until 2026-07-30 this file held
+# path 1 only while the live GitRepo was widened by hand, so `kubectl apply -f`
+# would have narrowed `spec.paths` back to a single entry. FLEET-WIRING.md
+# records that exact mistake on lab-lab-memory, where re-applying a GitRepo
+# file to add `pollingInterval` silently reverted a hand-narrowed `spec.paths`
+# and restarted a failing retry loop. Keep this list in sync with the live
+# resource from here on, and the trap stays closed.
 #
-# Narrowing is not a rollback either. For `22-openchoreo/control-plane` in
+# Narrowing is still not a rollback. For `22-openchoreo/control-plane` in
 # particular, removing the path uninstalls the release and takes 36 CRDs and
 # every OpenChoreo object in the cluster with it. Use `spec.paused: true`.
 #
@@ -58,11 +61,39 @@ spec:
   # rather than depending on a controller-wide default. See FLEET-WIRING.md.
   pollingInterval: 60s
   paths:
-    # STAGE 1 ONLY — the other nineteen are patched in one at a time.
+    # All twenty, in install order — matches the live GitRepo as of 2026-07-30.
     # NOTE `22-openchoreo` itself must NEVER appear in this list: a nested
     # fleet.yaml deploys as soon as its parent path is adopted, so adding the
     # parent would deploy all twenty bundles at once.
+    #
+    # The order below is the order they must be INSTALLED in, not merely the
+    # order they are listed. Fleet does not sequence paths within a GitRepo —
+    # on a fresh cluster, applying this file deploys all twenty at once and the
+    # hard orderings (control-plane-extras before control-plane,
+    # observability-extras before observability-plane) are not honoured. For a
+    # rebuild, stage them as 22-openchoreo/README.md describes rather than
+    # applying this file as-is.
     - 22-openchoreo/external-secrets
+    - 22-openchoreo/openbao
+    - 22-openchoreo/secret-store
+    - 22-openchoreo/kgateway-crds
+    - 22-openchoreo/kgateway-params
+    - 22-openchoreo/kgateway
+    - 22-openchoreo/control-plane-extras
+    - 22-openchoreo/control-plane
+    # ── the cluster-gateway CA bootstrap goes here on a rebuild (README.md) ──
+    - 22-openchoreo/thunder
+    - 22-openchoreo/data-plane
+    - 22-openchoreo/data-plane-extras
+    - 22-openchoreo/workflow-registry
+    - 22-openchoreo/observability-extras
+    - 22-openchoreo/observability-plane
+    - 22-openchoreo/workflow-plane
+    - 22-openchoreo/observability-logs
+    - 22-openchoreo/observability-traces
+    - 22-openchoreo/observability-events
+    - 22-openchoreo/observability-metrics
+    - 22-openchoreo/registration
   # `ash4d-lab` is a bespoke label already on the sdf1 cluster (c-nnzn9). Chosen
   # over management.cattle.io/cluster-name, which Rancher owns and may rewrite.
   # Do NOT reuse site=ash4d — that belonged to a deleted junk cluster.
