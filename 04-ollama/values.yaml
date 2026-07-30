@@ -88,11 +88,8 @@ ollama:
     # (Learned 2026-07-30: declaring the un-pulled 26.6 GiB Q8_0 held the pod
     # in ContainerCreating for the whole throttled download.)
     - hf.co/unsloth/Qwen3.6-27B-GGUF:UD-Q6_K_XL
+    - hf.co/unsloth/Qwen3.6-27B-GGUF:Q8_0
     - hf.co/unsloth/Devstral-Small-2-24B-Instruct-2512-GGUF:UD-Q6_K_XL
-    # Run B (Q8_0) pull + its q8-precise create are intentionally NOT declared
-    # yet: the base is still downloading out-of-band. Re-add both together once
-    # `ollama list` shows hf.co/unsloth/Qwen3.6-27B-GGUF:Q8_0 — a create whose
-    # FROM is missing fails the postStart hook and crash-loops the pod.
     # Coding tags with sampling pinned for precision. Stock sampling on the
     # upstream tags is tuned for chat, not code — qwen3.6:27b shipped
     # presence_penalty 1.5, which pushes the model away from tokens it already
@@ -105,6 +102,15 @@ ollama:
     # managed and survive a volume rebuild. Before 2026-07-30 they existed only
     # on the Longhorn PVC.
     create:
+    - name: qwen3.6:27b-q8-precise
+      template: |
+        FROM hf.co/unsloth/Qwen3.6-27B-GGUF:Q8_0
+        PARAMETER temperature 0.15
+        PARAMETER top_p 0.9
+        PARAMETER top_k 20
+        PARAMETER repeat_penalty 1.0
+        PARAMETER presence_penalty 0
+        PARAMETER min_p 0
     - name: qwen3.6:27b-q6-precise
       template: |
         FROM hf.co/unsloth/Qwen3.6-27B-GGUF:UD-Q6_K_XL

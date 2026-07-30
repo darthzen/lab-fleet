@@ -1,5 +1,0 @@
-# ollama-exporter is its own Fleet bundle, managed by the explicit
-# 04-ollama/ollama-exporter path entry in the lab-ai GitRepo. Ignored here so
-# the parent 04-ollama Helm bundle never scans it and the two bundles stay
-# fully independent (Rick, 2026-07-30).
-ollama-exporter/
