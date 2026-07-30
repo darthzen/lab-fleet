@@ -1,27 +1,28 @@
-# Fleet bundle — Buzz relay (Helm, VENDORED chart).
+# Fleet bundle — Buzz relay (Helm).
 #
 # Nostr-based messaging relay at buzz.ash4d.com: one relay binary serving
 # WebSocket + REST + web UI, backed by bundled PostgreSQL and Redis subcharts.
 #
-# The chart is vendored under ./chart rather than pulled from a repo, because
-# chart buzz-0.1.6 is published NOWHERE reachable. It is not on any configured
-# helm repo, not at oci://ghcr.io/block/buzz, and github.com/block/buzz is an
-# unrelated audio-transcription desktop app despite what the chart's own
-# `home:` URL claims. ./chart was recovered from the live Helm release secret
-# (buzz/sh.helm.release.v1.buzz.v7), which stores the chart verbatim.
-# Verified: `helm template` with values.yaml renders byte-identical to live.
+# Chart pinned to 0.1.6, matching the running release, so Fleet adopts rather
+# than upgrades. Verified: renders byte-identical to live.
 #
-# Two things had to be repaired in the recovered chart:
-#   1. Helm rewrites a dependency's `name` to its alias when storing a chart,
-#      so Chart.yaml came back claiming the postgres subchart is named
-#      "postgresql". That disagreed with the recovered Chart.lock and no
-#      dependency build was possible until it was set back to "postgres".
-#   2. The subcharts themselves are NOT in the release secret. They are
-#      re-fetched from oci://registry-1.docker.io/cloudpirates, pinned to the
-#      exact versions the recovered Chart.lock records (postgres 0.19.5,
-#      redis 0.30.3) rather than the upstream "0.19.x"/"0.30.x" ranges, so the
-#      render reproduces live instead of drifting. The resulting
-#      charts/*.tgz are committed — Fleet does not run `helm dependency build`.
+# The chart lives at oci://ghcr.io/block/buzz/charts/buzz — note the `/charts/`
+# path segment. This bundle briefly vendored a copy of the chart recovered from
+# the live Helm release secret, on the mistaken conclusion that 0.1.6 was
+# unpublished. It is published; the earlier check probed
+# oci://ghcr.io/block/buzz (no `/charts/`) and got a 404. The correct ref was
+# recorded all along in this directory's values.yaml header and in shell history.
+# The recovered copy rendered identically to what upstream serves, so nothing was
+# wrong with the output — only with vendoring ~36 files that did not need to be
+# in this repo. Lesson recorded in FLEET-WIRING.md: before concluding a chart is
+# lost, pull the exact ref from the install command, not a guessed one.
+#
+# `github.com/block/buzz` is an unrelated audio-transcription desktop app, which
+# is a red herring — the chart's own `home:`/`sources:` URLs point at it.
+#
+# Subcharts (postgres, redis from oci://registry-1.docker.io/cloudpirates) come
+# from the published chart's own Chart.lock, so there is nothing to vendor and no
+# `helm dependency build` for Fleet to run.
 #
 # PREREQUISITE SECRET: `buzz-relay` must exist in the namespace before this
 # path is enabled. values.yaml sets secrets.existingSecret, which suppresses
@@ -49,7 +50,8 @@
 defaultNamespace: buzz
 helm:
   releaseName: buzz
-  chart: ./chart
+  chart: oci://ghcr.io/block/buzz/charts/buzz
+  version: "0.1.6"
   valuesFiles:
     - values.yaml
   takeOwnership: true

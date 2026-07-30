@@ -331,10 +331,32 @@ hand-tuning habits this cluster has (see the ComfyUI and Ollama notes below).
   upstream offers no immutable version, vendor the chart. See
   `20-openshell/fleet.yaml`.
 
+- **🔴 Before concluding a chart is unpublished, pull the EXACT ref from the
+  install command. `buzz` was wrongly declared lost.** The first check probed
+  `oci://ghcr.io/block/buzz`, got a 404, and the chart was vendored on that
+  basis. The real ref is `oci://ghcr.io/block/buzz/charts/buzz` — note the
+  `/charts/` segment — and `0.1.6` pulls fine. It was written down in two places
+  the whole time: the header comment of `17-buzz/values.yaml`, and shell history.
+  41 files were vendored that did not need to be. Now referenced upstream, which
+  is both the repo convention and an immutable semver pin. Verified: the
+  published chart renders byte-identical to the recovered copy, and to live.
+
+  A misleading `home:`/`sources:` URL is not evidence either — this chart points
+  at `github.com/block/buzz`, an unrelated audio-transcription desktop app.
+
+- **`openshell` DOES have immutable tags; it still has to be vendored, for a
+  narrower reason.** The earlier claim that "there is no immutable version to
+  pin" was wrong: `ghcr.io/nvidia/openshell/helm-chart` publishes `0.0.37`
+  through `0.0.42` plus content-addressed `0.0.0-dev.<sha>` tags. But the running
+  release was installed from the floating `0.0.0-dev` tag, and **none of the
+  published semvers reproduces it** — each renders 8 objects against live's 10.
+  So the vendored chart stays, because it is the only artifact known to match
+  live. To un-vendor it, find the `0.0.0-dev.<sha>` tag whose render matches
+  (~90 candidates, listable from the ghcr tags API) and pin that.
+
 - **A lost chart is recoverable from the cluster running it.** Helm stores the
-  chart verbatim inside the release Secret, so `buzz-0.1.6` and openshell's
-  chart were both reconstructed from `sh.helm.release.v1.<rel>.v<n>` after their
-  sources turned out to exist nowhere on disk or on GitHub. Two traps when doing
+  chart verbatim inside the release Secret, which is how openshell's chart was
+  reconstructed from `sh.helm.release.v1.<rel>.v<n>`. Two traps when doing
   this:
   - Helm rewrites a dependency's `name` to its **alias** when storing a chart,
     so the recovered `Chart.yaml` disagreed with the recovered `Chart.lock`
@@ -770,6 +792,91 @@ rollback before then costs only another DNS-01 round trip.
 Do not vendor `k8s/cert-manager-issuer.yaml` from that repo — it declares the
 same cluster-scoped `letsencrypt-dns` ClusterIssuer that `15-cert-manager/issuer`
 owns, and two bundles declaring one cluster-scoped object contend for it.
+
+## Recovered original install commands (2026-07-30)
+
+Found by searching the Ash4d Lab project at
+`~/Dropbox/Claude Cowork/Job Search/_portfolio/`, which holds a
+`lab-capture/lab-state-20260704-121209/` snapshot (a full `helm get values` dump
+of every release as of 2026-07-04) plus the `lab-memory` planning docs.
+
+**karakeep** — the exact installer is `deploy/install.sh` in the `lab-memory`
+repo (not in Dropbox):
+
+    helm repo add karakeep-app https://karakeep-app.github.io/helm-charts
+    helm upgrade --install karakeep karakeep-app/karakeep -n lab-memory \
+      -f deploy/values.yaml \
+      --set applicationSecretKey="$NEXTAUTH_SECRET" \
+      --set meilisearchMasterKey="$MEILI_MASTER_KEY" \
+      --wait --timeout 10m
+
+The two secrets were generated once by that script into `deploy/secrets.env`
+(gitignored at `deploy/.gitignore:1`) and re-passed on every upgrade,
+specifically because — in the script's own words — "the chart regenerates random
+secrets on every upgrade if these are not pinned". That is the same trap
+`18-lab-memory/values.yaml` avoids by disabling the chart's Secret objects.
+
+> **🔴 `deploy/secrets.env` NO LONGER EXISTS.** The karakeep and Meilisearch
+> credentials now live *only* in the two cluster Secrets. That turns the
+> 2026-07-30 accidental uninstall from "recovered fully" into a near-miss: had
+> those Secrets been chart-managed, they would have been deleted and the
+> credentials would have been **unrecoverable** — every session invalidated and
+> Meilisearch permanently locked out of its index with no way to reproduce the
+> key. Back up `lab-memory/karakeep` and `lab-memory/karakeep-meilesearch`.
+> Note `~/Developer` is a symlink into iCloud, so recreating `secrets.env` there
+> syncs the credentials to iCloud; that is a separate decision from git safety.
+
+**cert-manager** — rev 1 on 2026-06-08, and the dump proves the supplied values
+were only:
+
+    helm install cert-manager jetstack/cert-manager --version v1.20.2 \
+      -n cert-manager --set crds.enabled=true
+
+This **independently confirms the DNS-01 watch-out above**: the 2026-07-04
+snapshot records `extraArgs: []` in the effective values, and the live Deployment
+that day carried just five args with no `--dns01-recursive-nameservers`. The two
+DNS-01 flags therefore never came through Helm at any revision — they were added
+by direct edit afterwards. `15-cert-manager/values.yaml` is the only place they
+are written down.
+
+**Harbor** — *not recorded anywhere.* The project references it only as a
+consumer: `registry.ash4d.com`, robot accounts, and the `harbor-push` /
+`harbor-pull` docker-registry Secrets in `ai`. The 2026-07-04 snapshot predates
+the `registry` namespace (created ~07-12), so it captured nothing. This matches
+the cluster: Helm-labelled objects, no release Secret, no
+`meta.helm.sh/release-name`. Harbor's install remains unreconstructed, and
+reconstructing it means deriving values from live objects.
+
+### karakeep re-adoption is unblocked — the exact steps
+
+The pre-flight from the Watch-outs, run for real (dry-run only, nothing changed):
+
+    helm template karakeep karakeep-app/karakeep --version 0.32.0 -n lab-memory \
+      -f 18-lab-memory/values.yaml --no-hooks > /tmp/kk.yaml
+    kubectl -n lab-memory apply --server-side --field-manager=fleetagent \
+      --dry-run=server -f /tmp/kk.yaml
+
+reproduces all 14 conflicts against manager `helm` across `karakeep-chrome`,
+`karakeep-meilisearch` and `karakeep`. Adding `--force-conflicts` to the same
+dry-run **succeeds on all 10 objects**, including the StatefulSet — so the
+API server does not reject it and `.spec.volumeClaimTemplates` is not actually
+being changed (live and rendered are semantically identical; live only carries
+server-defaulted `apiVersion`/`kind`/`volumeMode`).
+
+Fleet's field manager is **`fleetagent`** (no hyphen), confirmed from
+`managedFields` on the adopted buzz Deployment — where `helm` and `fleetagent`
+coexist as Apply managers precisely because that render matched live exactly.
+
+So the unblock is to hand those fields to `fleetagent` once, before adopting:
+
+    kubectl -n lab-memory apply --server-side --field-manager=fleetagent \
+      --force-conflicts -f /tmp/kk.yaml     # drop --dry-run to commit
+
+Expect the karakeep and chrome pods to roll — the normalised values differ
+cosmetically from live (`cpu: 1` → `1000m`, explicit `hostIPC: false`,
+`initialDelaySeconds: 0`). Take a backup of the two Secrets first, and re-read
+the path-removal warning in Watch-outs before adopting: with an owned release,
+backing out means `helm uninstall`.
 
 ## Drift reconciliation log
 

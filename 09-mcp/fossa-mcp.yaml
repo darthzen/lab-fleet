@@ -7,8 +7,8 @@
 # Image is built locally and pushed to the in-cluster Harbor, same as
 # ollama-exporter — so this needs the harbor-pull imagePullSecret, which is
 # created out-of-band and is NOT in this repo:
-#   docker build -t registry.ash4d.com/ash4d-lab/fossa-mcp:0.1.0 .
-#   docker push registry.ash4d.com/ash4d-lab/fossa-mcp:0.1.0
+#   docker build -t registry.ash4d.com/ash4d-lab/fossa-mcp:0.1.1 .
+#   docker push registry.ash4d.com/ash4d-lab/fossa-mcp:0.1.1
 #
 # The FOSSA_API_TOKEN Secret is referenced by name and created out-of-band —
 # see fossa-mcp-token.secret.example.yaml.txt.
@@ -52,7 +52,7 @@ spec:
             secretKeyRef:
               key: token
               name: fossa-mcp-token
-        image: registry.ash4d.com/ash4d-lab/fossa-mcp:0.1.0
+        image: registry.ash4d.com/ash4d-lab/fossa-mcp:0.1.1
         imagePullPolicy: IfNotPresent
         livenessProbe:
           httpGet:
@@ -111,3 +111,42 @@ spec:
   selector:
     app: fossa-mcp
   type: ClusterIP
+---
+# Reached from outside the cluster by Claude Code / Cowork sessions on the LAN.
+# fossa-mcp.ash4d.com is a public Cloudflare record pointing at the private
+# Traefik address (192.168.7.150), so it resolves everywhere but only connects
+# from inside the network — same shape as mcp-ollama and mcp-memory.
+#
+# READ THIS BEFORE WIDENING IT: the server does not authenticate callers. Every
+# request it serves uses the one Full FOSSA API token it started with, so
+# whoever reaches this host has that token's read access to the whole FOSSA org.
+# That is acceptable only while the target address stays private. Do not put it
+# behind a Cloudflare Tunnel or a public A record without adding an
+# authenticating middleware first (see the project's DECISIONS.md §2).
+#
+# Only /mcp is routed — /healthz stays cluster-internal for the probes.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-dns
+  labels:
+    app: fossa-mcp
+  name: fossa-mcp
+  namespace: ai
+spec:
+  rules:
+  - host: fossa-mcp.ash4d.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: fossa-mcp
+            port:
+              number: 8080
+        path: /mcp
+        pathType: Prefix
+  tls:
+  - hosts:
+    - fossa-mcp.ash4d.com
+    secretName: fossa-mcp-ash4d-tls

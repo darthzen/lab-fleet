@@ -10,9 +10,10 @@
 # One GitRepo per namespace — see gitrepos/README.md.
 #
 # MED RISK: stateful. 2 Deployments, 2 StatefulSets (bundled Postgres and
-# Redis) and 4 Longhorn PVCs. The chart is VENDORED because buzz-0.1.6 is
-# published nowhere reachable; it was recovered from the live Helm release
-# secret. Verified: renders byte-identical to live, so adoption is a no-op.
+# Redis) and 4 Longhorn PVCs. Chart pinned to an immutable 0.1.6 from
+# oci://ghcr.io/block/buzz/charts/buzz (note the /charts/ segment -- probing
+# oci://ghcr.io/block/buzz 404s and briefly led to vendoring a copy).
+# Verified: renders byte-identical to live, so adoption is a no-op.
 #
 # PREREQUISITE SECRET: `buzz-relay` — the relay and BOTH subcharts read it.
 #
