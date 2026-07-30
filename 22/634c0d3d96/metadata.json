@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "22634c0d3d96",
+  "strategy": "manual-commit",
+  "branch": "fleet-gitrepos-per-namespace",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "14-cluster-mgmt/FLEET-WIRING.md",
+    "14-cluster-mgmt/gitrepos/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/22/634c0d3d96/0/metadata.json",
+      "transcript": "/22/634c0d3d96/0/full.jsonl",
+      "compact_transcript": "/22/634c0d3d96/0/transcript.jsonl",
+      "content_hash": "/22/634c0d3d96/0/content_hash.txt",
+      "prompt": "/22/634c0d3d96/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 23,
+    "cache_creation_tokens": 24586,
+    "cache_read_tokens": 4101237,
+    "output_tokens": 19297,
+    "api_call_count": 13
+  }
+}

@@ -1,0 +1,1 @@
+Let's do emby, resilio, and hermes at once, since those are no-impact to anything running. Use sub-agents to get it done.
