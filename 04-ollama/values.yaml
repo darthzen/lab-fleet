@@ -1,19 +1,63 @@
 extraEnv:
+# Pins ollama to the Tesla V100 32 GB. Do NOT rely on the device plugin to
+# choose: GPU 0 on this node is a GTX 1070 (8 GB), which cannot hold a 30B-class
+# model at any useful context. See ollama.gpu.enabled below — the two settings
+# are a pair.
 - name: NVIDIA_VISIBLE_DEVICES
   value: GPU-a69c6398-0353-3234-9f35-af0e02865f33
 - name: NVIDIA_DRIVER_CAPABILITIES
   value: compute,utility
+# -1 = never unload. The first model loaded holds its VRAM indefinitely.
+# See the sizing note below for what that costs on a shared box.
 - name: OLLAMA_KEEP_ALIVE
-  value: 5m
+  value: "-1"
+# ollama sizes the KV cache as num_ctx x num_parallel — each slot reserves the
+# full OLLAMA_CONTEXT_LENGTH, they do not share one window. Confirmed against
+# the live pod 2026-07-30: 262144 ctx x 1 slot held ~30.4 GiB of the V100, so
+# 2 slots at that context would need ~43 GiB. 2 x 98304 costs 9.56 GiB of KV.
 - name: OLLAMA_NUM_PARALLEL
   value: "2"
+# Global DEFAULT context for requests that don't pass num_ctx; ollama clamps
+# per model to that model's trained maximum.
+#
+# 98304 (96k) chosen 2026-07-30. This is per parallel slot, so the real cost is
+# 98304 x OLLAMA_NUM_PARALLEL. Sized for qwen3-coder:30b (see the KV budget
+# note below). Still clears the 64k floor that hermes-agent (10-hermes) needs.
+#
+# Keep this declared in the chart. The live Deployment has drifted twice from
+# out-of-band `kubectl edit` (65536 on 2026-07-18, 262144 on 2026-07-29), which
+# helm never knew about — an undeclared value gets silently reset to ollama's
+# built-in default on the next upgrade.
+- name: OLLAMA_CONTEXT_LENGTH
+  value: "98304"
+# Both are load-bearing for the context sizing above, NOT optional tuning.
+# llama.cpp only honours a quantized KV cache when flash attention is on —
+# without FA the cache silently falls back to f16 and doubles.
+#
+# KV budget for qwen3-coder:30b (Q4_K_M, 48 layers, 4 KV heads, head_dim 128
+# -> 49152 KV elements/token). q8_0 is 1.0625 bytes/element = 51 KiB/token:
+#      96k x 2 slots ->  9.56 GiB KV   <- current setting
+#     112k x 2 slots -> 11.16 GiB KV
+#     128k x 2 slots -> 12.75 GiB KV   (no headroom)
+#     256k x 1 slot  -> 12.75 GiB KV   (was live; caused CPU offload)
+# Weights are 17.3 GiB, leaving roughly 12.9 GiB for KV plus compute buffers
+# on the 31.75 GiB V100.
+#
+# Evidence for moving off 256k — /api/ps on 2026-07-30 at 262144 x 1:
+#   size 33354990164 vs size_vram 32617026026 = ~703 MiB resident on CPU,
+#   with prompt processing at 152 tok/s and falling as context grew.
 - name: OLLAMA_FLASH_ATTENTION
   value: "1"
 - name: OLLAMA_KV_CACHE_TYPE
   value: q8_0
 ollama:
   gpu:
-    enabled: true
+    # false ON PURPOSE, and this is what the cluster actually runs. Setting it
+    # true makes the chart request nvidia.com/gpu, at which point the device
+    # plugin injects its own NVIDIA_VISIBLE_DEVICES and may hand out GPU 0
+    # (the 8 GB GTX 1070). GPU access here comes from runtimeClassName: nvidia
+    # plus the explicit UUID above.
+    enabled: false
     number: 1
     type: nvidia
   models:
@@ -22,7 +66,9 @@ ollama:
     - nomic-embed-text
 persistentVolume:
   enabled: true
-  size: 100Gi
+  # 200Gi is the deployed size. PVCs cannot shrink — this file previously said
+  # 100Gi, which would have failed or been silently ignored on upgrade.
+  size: 200Gi
   storageClass: longhorn
 runtimeClassName: nvidia
 service:
