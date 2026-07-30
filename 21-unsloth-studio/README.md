@@ -82,17 +82,38 @@ QLoRA and fp16 LoRA both work; FP8 does not.
 
 ## Storage
 
-One 100Gi Longhorn PVC (`unsloth-data`), single mount at `/workspace/work`
+One 70Gi Longhorn PVC (`unsloth-data`), single mount at `/workspace/work`
 (the image's working-directory convention). `HF_HOME` is redirected to
 `/workspace/work/.hf-home` so the base-model cache, datasets, and checkpoints
 all live on the one PVC and survive pod restarts — the ComfyUI lesson ("both
 mounts must be PVC-backed or installs die with the pod") solved with a single
 mount.
 
-100Gi fits a couple of 13B-class fp16 base models plus datasets and LoRA
-checkpoints. The Longhorn pool was at ~412Gi of ~500Gi allocated before this
-claim; expand online (Longhorn supports it) rather than over-claiming. Do not
-run full-model checkpoint-heavy fine-tunes against this pool.
+70Gi fits a 13B-class fp16 base model plus datasets and LoRA checkpoints.
+Expand online (Longhorn supports it) rather than over-claiming. Do not run
+full-model checkpoint-heavy fine-tunes against this pool.
+
+### Reduced from 100Gi on 2026-07-30
+
+The original 100Gi was sized against "~412Gi of ~500Gi allocated". That is not
+the limit that binds. Longhorn schedules replicas against
+`(storageMaximum - storageReserved) x over-provisioning%`, which on sdf1 was
+~764Gi with ~759Gi already scheduled — so this claim **bound but never got a
+replica scheduled**. It sat at `actualSize 0` for hours, looking healthy in
+`kubectl get pvc`, and the instant `22-openchoreo` freed 128Gi of budget it
+took 100Gi of it and starved OpenChoreo's Prometheus of the 6Gi it needed.
+
+Two things worth carrying forward:
+
+- **`Bound` does not mean scheduled.** Check
+  `kubectl -n longhorn-system get volumes.longhorn.io <pv>` for
+  `robustness: healthy` before believing a claim is real. A `faulted` or
+  unscheduled volume is a claim on future budget, not just a dormant one.
+- **Shrinking is delete-and-recreate.** Kubernetes only permits PVC
+  *expansion*, so this reduction required deleting the (empty) PVC and
+  letting Fleet recreate it. That is only safe because the claim held no data
+  and `unsloth-studio` sits at `replicas: 0`. Once real checkpoints live here,
+  the same change costs a backup and restore.
 
 ## Resources
 
