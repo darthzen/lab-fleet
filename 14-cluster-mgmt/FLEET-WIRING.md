@@ -816,15 +816,28 @@ specifically because — in the script's own words — "the chart regenerates ra
 secrets on every upgrade if these are not pinned". That is the same trap
 `18-lab-memory/values.yaml` avoids by disabling the chart's Secret objects.
 
-> **🔴 `deploy/secrets.env` NO LONGER EXISTS.** The karakeep and Meilisearch
-> credentials now live *only* in the two cluster Secrets. That turns the
-> 2026-07-30 accidental uninstall from "recovered fully" into a near-miss: had
-> those Secrets been chart-managed, they would have been deleted and the
-> credentials would have been **unrecoverable** — every session invalidated and
-> Meilisearch permanently locked out of its index with no way to reproduce the
-> key. Back up `lab-memory/karakeep` and `lab-memory/karakeep-meilesearch`.
-> Note `~/Developer` is a symlink into iCloud, so recreating `secrets.env` there
-> syncs the credentials to iCloud; that is a separate decision from git safety.
+> **`deploy/secrets.env` had been lost, and was recreated 2026-07-30** from the
+> live Secrets, with both values verified to match by digest. Until then the
+> karakeep and Meilisearch credentials existed *only* in the two cluster Secrets,
+> which turned that day's accidental uninstall from "recovered fully" into a
+> near-miss: had those Secrets been chart-managed they would have been deleted,
+> and the credentials would have been **unrecoverable** — every session
+> invalidated and Meilisearch permanently locked out of its index with no way to
+> reproduce the key.
+>
+> The file is `chmod 600` and gitignored at `deploy/.gitignore:1`. Note
+> `~/Developer` is a symlink into iCloud, so it does sync there — accepted
+> deliberately, since the alternative was a single copy inside the cluster.
+>
+> **Two traps if you re-run `install.sh` now.** It reads the lab-memory repo's
+> own `deploy/values.yaml`, not this repo's `18-lab-memory/values.yaml`, and the
+> two have diverged:
+>   1. That file still carries the stale
+>      `OLLAMA_BASE_URL: http://192.168.7.153:11434`, so running it would revert
+>      the live StatefulSet off the in-cluster `ollama-exporter:9401` proxy.
+>   2. It leaves the chart's Secret objects enabled, so the two Secrets become
+>      Helm-owned again — re-arming exactly the deletion path described above,
+>      though now recoverable from `secrets.env`.
 
 **cert-manager** — rev 1 on 2026-06-08, and the dump proves the supplied values
 were only:
