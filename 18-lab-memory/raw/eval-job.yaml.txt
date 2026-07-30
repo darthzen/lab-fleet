@@ -1,0 +1,45 @@
+# ONE-TIME EVAL JOB — not part of the bundle.
+#
+# Renamed to .txt so Fleet never applies it, the same convention as
+# 09-mcp/github-mcp-token.secret.example.yaml.txt and
+# 17-buzz/minio/buzz-minio-mkbucket.job.yaml.txt.
+#
+# lab-memory-eval already ran (Complete, 17d as of 2026-07-30). A Job's spec
+# is near-immutable, so a completed Job inside a synced bundle makes Fleet
+# fight the API server on every subsequent change to this path.
+#
+# Run by hand to re-evaluate:
+#   kubectl -n lab-memory delete job lab-memory-eval
+#   kubectl -n lab-memory create -f eval-job.yaml.txt
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: lab-memory-eval
+  namespace: lab-memory
+spec:
+  activeDeadlineSeconds: 900
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: eval
+          image: registry.suse.com/bci/python:3.12
+          command: ["/bin/sh", "-c"]
+          args:
+            - pip install --quiet pymilvus requests && mkdir -p /src/lab_memory_mcp && cp /app/retrieval.py /app/__init__.py /app/server.py /src/lab_memory_mcp/ && cp /app/eval_queries.py /src/ && cd /src && PYTHONPATH=/src python3 eval_queries.py
+          env:
+            - name: KARAKEEP_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: lab-memory-ingest
+                  key: karakeep-api-key
+          volumeMounts:
+            - name: src
+              mountPath: /app
+          resources:
+            requests: {memory: 256Mi, cpu: 100m}
+            limits: {memory: 1Gi, cpu: "1"}
+      volumes:
+        - name: src
+          configMap:
+            name: lab-memory-mcp-src

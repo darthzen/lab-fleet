@@ -1,0 +1,25 @@
+# The agent's two in-cluster tool/inference dependencies, both in the 'ai' ns:
+#   - mcpo (MCP tool gateway)  ai/mcpo   :8000
+#   - Ollama (local inference) ai/ollama :11434
+# This is the entire "zero data egress" story: diagnosis tools and model
+# inference never leave the cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: egress-mcpo-ollama
+  namespace: nemoclaw
+  labels:
+    app.kubernetes.io/part-of: nemoclaw-ops-agent
+spec:
+  podSelector: {}
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ai
+      ports:
+        - port: 8000     # mcpo
+          protocol: TCP
+        - port: 11434    # ollama
+          protocol: TCP

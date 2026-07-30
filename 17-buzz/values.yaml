@@ -1,0 +1,149 @@
+# Buzz relay — buzz.ash4d.com, LAN-only behind Traefik, VPN access.
+# helm upgrade --install buzz oci://ghcr.io/block/buzz/charts/buzz \
+#   --version 0.1.6 -n buzz -f values.yaml
+
+# Canonical host. This selects the community: the relay binds
+# resolve_host(request.Host) -> community, and creates a NEW community for any
+# host it hasn't seen. So changing this value does not rename a community, it
+# switches to a different one. Community for this host:
+#   3dc0506a-12b2-44dc-bd57-d17b3532f71a  (the real one — do not orphan it)
+#
+# External access is added by making buzz-ext.ash4d.com reach THIS host, not by
+# changing this value. See gcp-buzz-ext.yaml.
+relayUrl: wss://buzz.ash4d.com
+# mediaBaseUrl defaults to https://buzz.ash4d.com/media — leave unset.
+
+# REQUIRED: 64-char lowercase hex Nostr pubkey (relay.requireRelayMembership
+# defaults true, making this a closed relay). Get it from your Buzz client
+# profile after creating your identity.
+ownerPubkey: "94005a8c7fd13215b1191163c0990d406aa50886893819015aa03fd35ac0a075"
+
+replicaCount: 1
+
+# UPSTREAM MISMATCH: chart 0.1.6 (newest published) pins appVersion 0.1.0, but
+# the ghcr.io/block/buzz:0.1.0 image ships only the buzz-relay binary — no
+# buzz-admin, no migrations. It ignores BUZZ_AUTO_MIGRATE, so the schema is
+# never created and the relay dies on: relation "events" does not exist.
+# The app is at 0.5.0; only :main satisfies this chart. Pinned by digest below.
+#
+# The chart's image helper is printf "%s:%s" repository tag, so splitting the
+# digest across the two fields is what produces a valid repo@sha256:... ref.
+# To re-pin: crane digest ghcr.io/block/buzz:main   (or the curl in secret.md)
+#
+# SECURITY re-pin 2026-07-28: the previous digest (650b10af, rev 63c62fcf,
+# built 07-27 02:17Z) predated the nostr 0.44.6 bump for RUSTSEC-2026-0216
+# (NIP-44 remote DoS, block/buzz#3135, merged 07-27 16:04Z) — that bump is in
+# the ROOT Cargo.lock, which is the workspace containing crates/buzz-relay, so
+# it is a relay fix, not just a desktop one. requireRelayMembership is not a
+# shield: buzz.ash4d.com is internet-reachable through the GCP proxy. Current
+# pin is rev 4a977c58 (built 07-28 14:34Z), which contains #3135. Do not roll
+# back below that revision.
+image:
+  repository: ghcr.io/block/buzz@sha256
+  tag: "98b68d4094e452a962a513d37d54d3533bfd9d08265abcc02b1dc1784c51b743"
+
+# Pre-created out-of-band; see secret.md.
+#
+# MUST be named "buzz-relay" (= <fullname>-relay). Setting existingSecret
+# suppresses the chart's own Secret entirely, but the bundled Postgres/Redis
+# subcharts still hardcode a reference to <fullname>-relay for their
+# postgres-password / redis-password keys. Reusing that exact name is what
+# keeps both the relay and the subcharts reading the same Secret.
+#
+# Required keys: BUZZ_RELAY_PRIVATE_KEY, BUZZ_GIT_HOOK_HMAC_SECRET,
+# BUZZ_S3_ACCESS_KEY, BUZZ_S3_SECRET_KEY, DATABASE_URL, REDIS_URL,
+# postgres-password, redis-password.
+secrets:
+  existingSecret: buzz-relay
+
+relay:
+  requireRelayMembership: true
+  # Leave null: chart auto-disables if replicaCount ever goes >1 (no SFU yet).
+  huddleAudioAvailable: null
+  resources:
+    requests: {cpu: "500m", memory: "512Mi"}
+    limits:   {cpu: "2",    memory: "2Gi"}
+
+# ── Ingress (Traefik + cert-manager DNS-01, matching your existing pattern) ──
+# If you do have a wildcard default cert in Traefik's static config, delete
+# the annotation and the tls: block entirely.
+ingress:
+  enabled: true
+  className: traefik
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-dns
+  # Left empty on purpose: the chart derives buzz.ash4d.com from relayUrl
+  # with path / pathType Prefix. If you ever set this, it must be a list of
+  # objects: [{host: ..., paths: [{path: /, pathType: Prefix}]}]
+  # Empty -> derived from relayUrl (buzz.ash4d.com). Deliberately ONE host.
+  #
+  # Do not add a second hostname here. The relay binds one community per
+  # request Host, so a second name would silently create and serve a second,
+  # empty community. Host-rewriting at a proxy is not a workaround either:
+  # nip98_expected_url() builds the expected signature URL from tenant.host(),
+  # so a rewritten Host makes every media upload, git push, and invite fail
+  # signature verification. External access uses this same hostname, resolved
+  # to the GCP proxy in public DNS. See gcp-proxy.yaml.
+  hosts: []
+  # No TLS here on purpose. TLS terminates at the GCP edge (gcp-proxy.yaml) and
+  # the GCP->home leg rides Tailscale, which is WireGuard-encrypted.
+  #
+  # Both clusters run cert-manager with a Cloudflare DNS-01 solver against the
+  # same zone. If both issue for buzz.ash4d.com they write and clean up the same
+  # _acme-challenge.buzz.ash4d.com TXT record and race each other — at renewal,
+  # unattended. Exactly one cluster must own this cert, and that is GCP.
+  tls: []
+
+# ── Object storage: standalone MinIO from minio.yaml ────────────────────────
+minio:
+  enabled: false                # NOT the bundled eval-only subchart
+s3:
+  endpoint: http://buzz-minio.buzz.svc.cluster.local:9000
+  bucket: buzz-media
+  # accessKey/secretKey come from secrets.existingSecret.
+
+# ── Postgres (bundled CloudPirates subchart) ────────────────────────────────
+postgresql:
+  enabled: true
+  auth:
+    database: buzz
+    username: buzz
+  persistence:
+    enabled: true
+    size: 20Gi
+    # Verify this key renders before installing:
+    #   helm template ... | grep -A3 storageClassName
+    # If it doesn't pass through, fix the dual-default StorageClass instead.
+    storageClass: longhorn
+
+# ── Redis (only strictly required above 1 replica; here so scaling is easy) ─
+redis:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 4Gi
+    storageClass: longhorn
+
+# ── Git scratch ─────────────────────────────────────────────────────────────
+# Ephemeral working space; truth lives in Postgres + object storage.
+persistence:
+  git:
+    enabled: true
+    storageClass: longhorn
+    accessMode: ReadWriteOnce
+    size: 10Gi
+
+git:
+  # Chart default is 500 MiB. Fine here — LAN-only, nothing traverses the
+  # Cloudflare edge, so the 100 MB proxied-request-body limit does not apply.
+  maxPackBytes: 524288000
+
+migrate:
+  autoMigrate: true
+
+# Rancher monitoring is present; flip on once the relay is healthy.
+serviceMonitor:
+  enabled: false
+
+podDisruptionBudget:
+  enabled: false                # meaningless at replicaCount 1

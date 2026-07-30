@@ -1,0 +1,56 @@
+# Fleet GitRepo — lab-memory namespace.
+#
+# This is the Fleet `GitRepo` CUSTOM RESOURCE (gitrepos.fleet.cattle.io), not a
+# git repository: it points Fleet at the existing lab-fleet repo and tells it
+# which paths to render. It lives on the RANCHER CONTROLLER
+# (192.168.7.148, kubectl context `rancher`), so it is not part of any bundle here.
+#
+#   kubectl --context rancher apply -f 14-cluster-mgmt/gitrepos/lab-lab-memory.yaml
+#
+# One GitRepo per namespace — see gitrepos/README.md.
+#
+# NAME: the namespace really is `lab-memory`, so `lab-<namespace>` gives
+# the doubled `lab-lab-memory`. Kept rather than special-cased, so the
+# naming rule stays mechanical.
+#
+# MED RISK, and THE ONE ADOPTION IN THIS BATCH THAT RESTARTS A POD: the
+# karakeep StatefulSet rolls once because the live object carries
+# OCR_USE_LLM first while the chart emits env alphabetically. Same
+# variable, same value, different position. Nothing is reconfigured.
+#
+# PREREQUISITE SECRETS: `karakeep` and `karakeep-meilesearch` (note the
+# chart's spelling). 18-lab-memory/values.yaml disables the chart's own
+# Secret objects on purpose — leaving them enabled would ROTATE
+# NEXTAUTH_SECRET and MEILI_MASTER_KEY on first sync.
+#
+# STAGED: this file carries ONLY `18-lab-memory`, so applying it is a single
+# adoption step and stays idempotent. `18-lab-memory/raw` is deliberately left
+# out — see gitrepos/README.md on why a GitRepo file must never hold more
+# than one unadopted path. Add the second path after the first is verified
+# Ready:
+#
+#   kubectl --context rancher -n fleet-default patch gitrepo lab-lab-memory \
+#     --type=merge -p '{"spec":{"paths":["18-lab-memory","18-lab-memory/raw"]}}'
+apiVersion: fleet.cattle.io/v1alpha1
+kind: GitRepo
+metadata:
+  name: lab-lab-memory
+  namespace: fleet-default
+spec:
+  repo: https://github.com/darthzen/lab-fleet
+  branch: main
+  paths:
+    - 18-lab-memory
+  # `ash4d-lab` is a bespoke label already on the sdf1 cluster (c-nnzn9). Chosen
+  # over management.cattle.io/cluster-name, which Rancher owns and may rewrite.
+  # Do NOT reuse site=ash4d — that belongs to the ash4d-site GitRepo and resolves
+  # to a different downstream cluster.
+  targets:
+    - clusterSelector:
+        matchLabels:
+          ash4d-lab: ""
+  # correctDrift OFF until every namespace is adopted and verified. Turning it on
+  # makes Fleet revert out-of-band `kubectl edit`s — the eventual goal, but it
+  # will fight this cluster's hand-tuning habits (GPU pins, context sizes).
+  correctDrift:
+    enabled: false

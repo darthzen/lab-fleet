@@ -1,0 +1,64 @@
+# sa-nemoclaw-observe — cluster-wide READ-ONLY, and only on the resources the
+# diagnosis loop actually inspects. This is the identity the running agent uses
+# and the identity tool/integration build tickets run under. get/list/watch
+# only: it cannot create, update, patch, or delete anything, anywhere.
+#
+# NOTE (2026-07-05): fleet.cattle.io CRDs are NOT registered on this cluster —
+# only a fleet-agent runs here; the Fleet control-plane CRDs live on the Rancher
+# management cluster. The fleet.cattle.io rule below is forward-compatible: it
+# grants nothing until/unless those CRDs are installed locally. The Fleet
+# stuck-bundle signal (T-032) must observe wherever the CRDs actually live.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sa-nemoclaw-observe
+  namespace: nemoclaw
+  labels:
+    app.kubernetes.io/part-of: nemoclaw-ops-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nemoclaw-observe
+  labels:
+    app.kubernetes.io/part-of: nemoclaw-ops-agent
+rules:
+  # Core: pod state + cluster events for correlation; pod logs for read-only
+  # evidence gathering during diagnosis. Namespaces for context enumeration.
+  - apiGroups: [""]
+    resources: ["pods", "events", "namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list"]
+  # cert-manager: the MVP signal (cert expiry).
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates", "certificaterequests"]
+    verbs: ["get", "list", "watch"]
+  # Longhorn: volume health signal.
+  - apiGroups: ["longhorn.io"]
+    resources: ["volumes"]
+    verbs: ["get", "list", "watch"]
+  # Prometheus Operator: alert rules feeding correlation.
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["prometheusrules"]
+    verbs: ["get", "list", "watch"]
+  # Fleet GitOps: forward-compatible (see header note).
+  - apiGroups: ["fleet.cattle.io"]
+    resources: ["bundles", "gitrepos"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nemoclaw-observe
+  labels:
+    app.kubernetes.io/part-of: nemoclaw-ops-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nemoclaw-observe
+subjects:
+  - kind: ServiceAccount
+    name: sa-nemoclaw-observe
+    namespace: nemoclaw

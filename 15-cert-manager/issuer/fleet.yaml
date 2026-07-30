@@ -1,0 +1,24 @@
+# Fleet bundle — letsencrypt-dns ClusterIssuer (raw manifest).
+#
+# Separate path from ../ because 15-cert-manager is a Helm bundle and Fleet
+# allows one chart per path.
+#
+# ORDERING: the ClusterIssuer is a cert-manager CRD instance, so the CRDs must
+# exist before this applies. In practice they already do (the cluster has been
+# issuing certs since June), but on a rebuild adopt ../ first.
+#
+# PREREQUISITE SECRET: cloudflare-api-token (key: api-token) in the
+# cert-manager namespace — the Cloudflare API token for the DNS-01 solver. Not
+# in this repo. Verified present 2026-07-30.
+#
+# Verified `kubectl diff`-clean against live before adoption.
+defaultNamespace: cert-manager
+
+# Raw-manifest bundle, but Fleet still deploys it via Helm internally — so
+# adopting the objects that are already on the cluster needs takeOwnership.
+# Without it the first sync fails: the live objects carry no
+# meta.helm.sh/release-name annotation, and Helm refuses to touch resources it
+# does not believe it owns. With it, adoption is metadata-only (Helm labels on
+# the top-level objects), so no pod template changes and no restarts.
+helm:
+  takeOwnership: true

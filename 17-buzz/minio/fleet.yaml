@@ -1,0 +1,24 @@
+# Fleet bundle — standalone MinIO backing buzz object storage (raw manifests).
+#
+# Separate path from ../ because 17-buzz is a Helm bundle and Fleet allows one
+# chart per path — the same reason 04-ollama/ollama-exporter is split out from
+# 04-ollama.
+#
+# The buzz chart's own bundled minio subchart is disabled
+# (minio.enabled: false in ../values.yaml) because it is eval-only. This is
+# the real object store; the relay reaches it at
+# http://buzz-minio.buzz.svc.cluster.local:9000 with credentials from the
+# buzz-relay Secret.
+#
+# The bucket-creation Job that shipped alongside these manifests is NOT part of
+# this bundle — see buzz-minio-mkbucket.job.yaml.txt for why.
+defaultNamespace: buzz
+
+# Raw-manifest bundle, but Fleet still deploys it via Helm internally — so
+# adopting the objects that are already on the cluster needs takeOwnership.
+# Without it the first sync fails: the live objects carry no
+# meta.helm.sh/release-name annotation, and Helm refuses to touch resources it
+# does not believe it owns. With it, adoption is metadata-only (Helm labels on
+# the top-level objects), so no pod template changes and no restarts.
+helm:
+  takeOwnership: true

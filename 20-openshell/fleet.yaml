@@ -1,0 +1,43 @@
+# Fleet bundle — OpenShell agent gateway (Helm, VENDORED chart).
+#
+# The chart is vendored under ./chart instead of being pulled from
+# oci://ghcr.io/nvidia/openshell/helm-chart, and that is deliberate.
+#
+# Upstream publishes this chart only as version `0.0.0-dev` — a mutable tag.
+# It has ALREADY drifted from the bits that produced the live release: pulling
+# 0.0.0-dev on 2026-07-30 yields a chart with an added
+# `server.workspaceStorageClass` value, added supervisor sidecar-topology
+# options, and a rewritten _helpers.tpl. Pinning `version: 0.0.0-dev` the way
+# 04-ollama pins 1.67.0 would therefore NOT adopt the release — it would
+# silently upgrade it. There is no immutable version to pin, so the chart that
+# is actually running is committed here instead.
+#
+# ./chart was recovered from the live Helm release secret
+# (openshell/sh.helm.release.v1.openshell.v3) — the release stores the chart
+# verbatim, so it is exact. Verified: `helm template` against ./chart with
+# values.yaml renders byte-identical to live across all three groups it
+# touches (openshell, nemoclaw-sandboxes, and the cluster-scoped pair).
+#
+# Re-check against upstream before any deliberate upgrade; do not assume
+# 0.0.0-dev is a safe target.
+#
+# ORDERING CONSTRAINT: this chart renders a ServiceAccount, Role, RoleBinding
+# and NetworkPolicy into the `nemoclaw-sandboxes` namespace, which is created
+# by 19-nemoclaw. Adopt 19-nemoclaw FIRST. It also creates a cluster-scoped
+# ClusterRole/ClusterRoleBinding pair (openshell-node-reader).
+#
+# values.yaml was recovered from the live release, NOT copied from the
+# nemoclaw-ops-agent repo's deploy/openshell/values.yaml. Those disagree, and
+# the repo's copy is stale:
+#   - repo says `sandboxNamespace: nemoclaw`, live says `nemoclaw-sandboxes`
+#   - live also sets `server.auth.allowUnauthenticatedUsers: true`, which the
+#     repo copy does not mention at all
+# Applying the repo's copy would move the sandbox namespace out from under the
+# NetworkPolicy and RBAC that 19-nemoclaw establishes for it.
+defaultNamespace: openshell
+helm:
+  releaseName: openshell
+  chart: ./chart
+  valuesFiles:
+    - values.yaml
+  takeOwnership: true

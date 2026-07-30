@@ -1,0 +1,103 @@
+# lab-memory: Karakeep values override (chart: karakeep-app/karakeep v0.32.0)
+# Drafted by qwen3-coder:30b (local Ollama), reviewed by Claude. T-001/T-002/T-003.
+#
+# CHANGED FOR FLEET, vs the lab-memory repo's deploy/values.yaml:
+#
+# 1. secrets.karakeep.enabled / secrets.meilesearch.enabled are now false.
+#    The lab-memory repo injected applicationSecretKey and meilisearchMasterKey
+#    at install time via --set from a git-ignored deploy/secrets.env. Fleet has
+#    no equivalent -- values come from this repo, which is public. Left as-is,
+#    the chart's `default (randAlphaNum 48)` would mint BRAND NEW values on
+#    every render, so the first Fleet sync would rotate NEXTAUTH_SECRET and
+#    MEILI_MASTER_KEY: every session invalidated and Meilisearch locked out of
+#    its own index.
+#    Disabling the chart's two Secret objects instead leaves the live
+#    `karakeep` and `karakeep-meilesearch` Secrets untouched. The container
+#    still consumes them by name through the chart's envFrom.secretRef, and the
+#    meilisearch subchart still reads existingMasterKeySecret. They become
+#    out-of-band prerequisites, exactly like github-mcp-token and harbor-pull.
+#    DO NOT re-enable these without also pinning the keys, and do not pin the
+#    keys in this repo.
+#
+# 2. OLLAMA_BASE_URL now points at the in-cluster ollama-exporter proxy.
+#    The recorded Helm release still said http://192.168.7.153:11434 (the
+#    MetalLB address) while the LIVE StatefulSet said
+#    ollama-exporter.ai.svc.cluster.local:9401 -- someone edited the object
+#    directly. This is the same class of drift as open-webui's Ollama URLs
+#    (see FLEET-WIRING.md). The live object is what adoption must not change,
+#    so the live value is what is committed here; adopting closes the drift
+#    rather than causing it.
+
+applicationProtocol: https
+applicationHost: karakeep.ash4d.com
+
+controllers:
+  karakeep:
+    containers:
+      karakeep:
+        env:
+          # --- Ollama inference (T-002): all AI local, zero external calls ---
+          # See note 2 in the header: this matches the live object, not the
+          # recorded release.
+          OLLAMA_BASE_URL: "http://ollama-exporter.ai.svc.cluster.local:9401"
+          INFERENCE_TEXT_MODEL: "llama3.1"
+          INFERENCE_IMAGE_MODEL: "gemma4:12b"   # multimodal, confirmed 2026-07-11
+          INFERENCE_CONTEXT_LENGTH: "8192"
+          INFERENCE_JOB_TIMEOUT_SEC: "120"
+          INFERENCE_FETCH_TIMEOUT_SEC: "600"
+          INFERENCE_ENABLE_AUTO_SUMMARIZATION: "true"
+          OLLAMA_KEEP_ALIVE: "30m"
+          # LLM-based OCR (gemma4:12b) instead of tesseract: image-only PDFs
+          # (Seabee, Black Fountain, Macrodose, Dark Light) extracted ~2K chars
+          # under tesseract. Docs: OCR_USE_LLM falls back to tesseract if no
+          # inference provider is set. Verified against Karakeep docs v0.32.0.
+          OCR_USE_LLM: "true"
+          DB_WAL_MODE: "true"
+          DISABLE_SIGNUPS: "true"   # first user created 2026-07-11; lock signups
+          LOG_LEVEL: "info"
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 250m
+          limits:
+            memory: 2Gi
+            cpu: 1000m
+    statefulset:
+      # Full restatement: helm lists replace, they do not merge.
+      volumeClaimTemplates:
+        - name: data
+          accessMode: ReadWriteOnce
+          size: 5Gi
+          storageClass: longhorn
+          globalMounts:
+            - path: /data
+
+ingress:
+  karakeep:
+    enabled: true
+    className: traefik
+    hosts:
+      - host: "{{ .Values.applicationHost }}"
+        paths:
+          - path: /
+            pathType: Prefix
+            service:
+              identifier: karakeep
+              port: http
+    tls:
+      - hosts:
+          - "{{ .Values.applicationHost }}"
+        secretName: karakeep-ash4d-tls   # cert-manager, letsencrypt-dns (DNS-01)
+
+meilisearch:
+  persistence:
+    storageClass: longhorn
+
+# See note 1 in the header. These two Secrets are prerequisites created
+# out-of-band, NOT managed by this bundle. Enabling either one rotates a
+# credential on the next sync.
+secrets:
+  karakeep:
+    enabled: false
+  meilesearch:
+    enabled: false

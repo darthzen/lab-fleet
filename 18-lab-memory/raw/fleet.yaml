@@ -1,0 +1,38 @@
+# Fleet bundle — lab-memory MCP servers, ingest CronJob, Certificate (raw).
+#
+# Separate path from ../ because 18-lab-memory is a Helm bundle and Fleet
+# allows one chart per path.
+#
+# Contents:
+#   mcp-memory.*           — the lab-memory MCP server (mcp-memory.ash4d.com)
+#   sme-salesengineer.yaml — two more MCP servers in one file, each with its
+#                            own Service and Ingress
+#   ingest-cronjob.yaml    — lab-memory-ingest
+#   karakeep-certificate.yaml — the karakeep-ash4d-tls Certificate. The other
+#                            three Certificates in this namespace are created
+#                            by cert-manager's ingress-shim from the Ingress
+#                            annotations, so they are not declared here.
+#
+# All of the above verified `kubectl diff`-clean against live before adoption.
+#
+# NOTE (2026-07-30, not caused by this bundle): the most recent
+# lab-memory-ingest run failed — job lab-memory-ingest-29755875, Failed 0/1.
+# Adoption does not fix or worsen that; the CronJob schedule and spec match
+# live exactly. Worth investigating separately.
+#
+# The completed lab-memory-eval Job is deliberately excluded — see
+# eval-job.yaml.txt.
+#
+# The lab-memory repo's deploy/namespace.yaml is also excluded: Fleet creates
+# the namespace from defaultNamespace, and declaring a cluster-scoped Namespace
+# in two sibling bundles would make them contend for it.
+defaultNamespace: lab-memory
+
+# Raw-manifest bundle, but Fleet still deploys it via Helm internally — so
+# adopting the objects that are already on the cluster needs takeOwnership.
+# Without it the first sync fails: the live objects carry no
+# meta.helm.sh/release-name annotation, and Helm refuses to touch resources it
+# does not believe it owns. With it, adoption is metadata-only (Helm labels on
+# the top-level objects), so no pod template changes and no restarts.
+helm:
+  takeOwnership: true

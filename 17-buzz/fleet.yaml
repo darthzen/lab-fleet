@@ -1,0 +1,55 @@
+# Fleet bundle — Buzz relay (Helm, VENDORED chart).
+#
+# Nostr-based messaging relay at buzz.ash4d.com: one relay binary serving
+# WebSocket + REST + web UI, backed by bundled PostgreSQL and Redis subcharts.
+#
+# The chart is vendored under ./chart rather than pulled from a repo, because
+# chart buzz-0.1.6 is published NOWHERE reachable. It is not on any configured
+# helm repo, not at oci://ghcr.io/block/buzz, and github.com/block/buzz is an
+# unrelated audio-transcription desktop app despite what the chart's own
+# `home:` URL claims. ./chart was recovered from the live Helm release secret
+# (buzz/sh.helm.release.v1.buzz.v7), which stores the chart verbatim.
+# Verified: `helm template` with values.yaml renders byte-identical to live.
+#
+# Two things had to be repaired in the recovered chart:
+#   1. Helm rewrites a dependency's `name` to its alias when storing a chart,
+#      so Chart.yaml came back claiming the postgres subchart is named
+#      "postgresql". That disagreed with the recovered Chart.lock and no
+#      dependency build was possible until it was set back to "postgres".
+#   2. The subcharts themselves are NOT in the release secret. They are
+#      re-fetched from oci://registry-1.docker.io/cloudpirates, pinned to the
+#      exact versions the recovered Chart.lock records (postgres 0.19.5,
+#      redis 0.30.3) rather than the upstream "0.19.x"/"0.30.x" ranges, so the
+#      render reproduces live instead of drifting. The resulting
+#      charts/*.tgz are committed — Fleet does not run `helm dependency build`.
+#
+# PREREQUISITE SECRET: `buzz-relay` must exist in the namespace before this
+# path is enabled. values.yaml sets secrets.existingSecret, which suppresses
+# the chart's own Secret; the Postgres and Redis subcharts still read
+# postgres-password / redis-password from that same name. See the buzz-relay
+# repo's secret.md for the full required key list.
+#
+# TLS: there is deliberately NO tls block and NO cert-manager Certificate for
+# buzz.ash4d.com on this cluster. TLS terminates at a GCP edge proxy, and both
+# clusters run a Cloudflare DNS-01 solver against the same zone — if both
+# issued for this host they would race on the same _acme-challenge TXT record
+# at renewal time, unattended. Exactly one cluster owns that cert and it is
+# GCP. This is why buzz-ext-ash4d-tls is a hand-made Secret here rather than a
+# cert-manager Certificate. Do not "fix" this by adding an issuer annotation.
+#
+# The image is pinned by digest, split across image.repository and image.tag
+# because the chart's helper does printf "%s:%s". The current pin is a
+# SECURITY floor, not just a version choice: it is the first build containing
+# the nostr 0.44.6 bump for RUSTSEC-2026-0216 (NIP-44 remote DoS). Do not roll
+# back below it — see the comments in values.yaml.
+#
+# NOT vendored from the buzz-relay repo: gcp-proxy.yaml and gcp-ollama.yaml.
+# Those are applied to a DIFFERENT cluster (the GCP k3s instance), not this
+# one, so they are not lab-fleet's cluster state.
+defaultNamespace: buzz
+helm:
+  releaseName: buzz
+  chart: ./chart
+  valuesFiles:
+    - values.yaml
+  takeOwnership: true

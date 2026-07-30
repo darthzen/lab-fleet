@@ -1,0 +1,41 @@
+# Fleet bundle — cert-manager (Helm).
+#
+# Pinned to v1.20.2, matching the running release, so Fleet adopts rather than
+# upgrades.
+#
+# THIS IS THE MOST LOAD-BEARING BUNDLE IN THE REPO AFTER LONGHORN. It issues
+# every TLS certificate in the cluster — 8 Certificates across ai, hermes,
+# lab-memory, ollama-code and registry, all through the single cluster-scoped
+# letsencrypt-dns ClusterIssuer in ./issuer. Break it and TLS fails everywhere,
+# though not immediately: existing certs keep serving until renewal.
+#
+# BEFORE ADOPTING, read values.yaml. It carries two extraArgs that exist only
+# on the live Deployment and NOT in the recorded release. Omitting them is a
+# delayed, cluster-wide certificate outage rather than an immediate one.
+#
+# Adoption restarts the cert-manager controller pod exactly once. The rendered
+# arg SET is identical to live, but the chart emits extraArgs before
+# --max-concurrent-challenges while live has them after it. Order is still part
+# of the pod template, so the Deployment rolls. Nothing is reconfigured.
+# cert-manager is stateless and re-reconciles on start; in-flight Challenges
+# are retried.
+#
+# CRDs are chart-managed (crds.enabled: true), so this bundle owns 6
+# CustomResourceDefinitions. That is why it is adopted LAST despite platform
+# components normally coming first: if Fleet ever prunes this bundle it takes
+# the CRDs with it, and every Certificate, Issuer and Order object in the
+# cluster goes too. Do not delete this GitRepo to "roll back" — remove the path
+# instead, and never enable correctDrift here until everything else is stable.
+#
+# Numbered 15 rather than inserted before 01 because renumbering the existing
+# 00-14 tree would invalidate every GitRepo path and doc reference in the repo.
+# Install order and directory order diverge here; see README.md.
+defaultNamespace: cert-manager
+helm:
+  releaseName: cert-manager
+  repo: https://charts.jetstack.io
+  chart: cert-manager
+  version: "v1.20.2"
+  valuesFiles:
+    - values.yaml
+  takeOwnership: true

@@ -1,36 +1,34 @@
-# Fleet GitRepo — ai namespace.
+# Fleet GitRepo — ash4d-origin namespace.
 #
 # This is the Fleet `GitRepo` CUSTOM RESOURCE (gitrepos.fleet.cattle.io), not a
 # git repository: it points Fleet at the existing lab-fleet repo and tells it
 # which paths to render. It lives on the RANCHER CONTROLLER
 # (192.168.7.148, kubectl context `rancher`), so it is not part of any bundle here.
 #
-#   kubectl --context rancher apply -f 14-cluster-mgmt/gitrepos/lab-ai.yaml
+#   kubectl --context rancher apply -f 14-cluster-mgmt/gitrepos/lab-ash4d-origin.yaml
 #
 # One GitRepo per namespace — see gitrepos/README.md.
 #
-# The big one: eight bundle paths all landing in the `ai` namespace, five of
-# them Helm adoptions. ADD PATHS ONE AT A TIME — start with 08-indexer or
-# 09-mcp (raw manifests, lowest risk), and leave the Helm charts for last.
-# PREREQS: github-mcp-token and harbor-pull Secrets. Diff
-# `helm get manifest` against live before enabling any Helm path.
+# LOW RISK: one nginx Deployment serving static HTML from a ConfigMap,
+# behind origin.ash4d.com. No TLS, no Secret prerequisites, no PVCs.
+# Verified `kubectl diff`-clean — a true no-op.
+#
+# Reconstructed from LIVE state, not from the ash4d.com repo's deploy/
+# directory. That directory targets the GCP cluster (namespace `ash4d`,
+# which does not exist here) and sets ingressClassName: nginx on a Traefik
+# cluster. See 16-ash4d-origin/fleet.yaml.
+#
+# Single path — nothing staged.
 apiVersion: fleet.cattle.io/v1alpha1
 kind: GitRepo
 metadata:
-  name: lab-ai
+  name: lab-ash4d-origin
   namespace: fleet-default
 spec:
   repo: https://github.com/darthzen/lab-fleet
   branch: main
   paths:
-    - 04-ollama
-    - 04-ollama/ollama-exporter
-    - 05-open-webui
-    - 06-milvus
-    - 06-milvus/attu
-    - 07-comfyui
-    - 08-indexer
-    - 09-mcp
+    - 16-ash4d-origin
   # `ash4d-lab` is a bespoke label already on the sdf1 cluster (c-nnzn9). Chosen
   # over management.cattle.io/cluster-name, which Rancher owns and may rewrite.
   # Do NOT reuse site=ash4d — that belongs to the ash4d-site GitRepo and resolves

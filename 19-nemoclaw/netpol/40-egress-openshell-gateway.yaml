@@ -1,0 +1,23 @@
+# Sandbox supervisors in nemoclaw dial back to the OpenShell gateway
+# (grpcEndpoint = openshell.openshell.svc:8080) for the token bootstrap and
+# session. Our default-deny blocks cross-namespace egress, so open this one
+# pinhole to the gateway service port only. (SSH ingress from the gateway is
+# handled separately by the chart-managed `openshell-sandbox-ssh` policy.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: egress-openshell-gateway
+  namespace: nemoclaw
+  labels:
+    app.kubernetes.io/part-of: nemoclaw-ops-agent
+spec:
+  podSelector: {}
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshell
+      ports:
+        - port: 8080
+          protocol: TCP

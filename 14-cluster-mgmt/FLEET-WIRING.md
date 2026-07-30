@@ -151,10 +151,17 @@ offline, not TLS mode. Worth a look, but unrelated to this cluster.
 `gitrepos/README.md` for the full table, rollout order, and the manifests
 themselves. Each namespace can be adopted, rolled back, or paused independently.
 
-Order: `lab-node-red` → `lab-emby` / `lab-resilio` → `lab-hermes` → `lab-ai`
-(eight paths, one at a time) → `lab-metallb-system` /
+Order: `lab-nemoclaw` → `lab-node-red` → `lab-emby` / `lab-resilio` →
+`lab-ash4d-origin` → `lab-hermes` → `lab-ai` (nine paths, one at a time) →
+`lab-openshell` → `lab-buzz` → `lab-lab-memory` → `lab-metallb-system` /
 `lab-nvidia-device-plugin` / `lab-cattle-monitoring-system` →
-`lab-longhorn-system` last.
+`lab-cert-manager` → `lab-longhorn-system` last.
+
+`lab-nemoclaw` moves to the front because it has no pod templates at all — only
+Namespaces, RBAC, NetworkPolicies and a PVC — so it is the one adoption that
+physically cannot restart anything. `lab-openshell` must follow it (its chart
+writes into `nemoclaw-sandboxes`). `lab-cert-manager` sits second-to-last
+despite being a platform component, because it owns the cert-manager CRDs.
 
 At each step: apply (or add a path), let Fleet render, confirm the
 BundleDeployment goes Ready, spot-check the workload, proceed. Roll back by
@@ -178,6 +185,112 @@ hand-tuning habits this cluster has (see the ComfyUI and Ollama notes below).
   kubectl diff -n <ns> -f /tmp/m.yaml
   ```
 
+  A diff here means the **recorded release** disagrees with live. That is worth
+  knowing, but it is not the same as the *repo* disagreeing with live — and only
+  the latter decides whether adoption changes anything. Pair this with the
+  `helm template` render check in the `lab-ai` adoption-log entry; on open-webui
+  the two checks give opposite answers, and the render is the one that was right.
+
+- **A transient git-polling timeout parks a GitRepo for up to 2 hours, and the
+  error it leaves behind is stale.** Symptom: `Stalled=True` on several GitRepos
+  at once with
+
+      Get "https://github.com/darthzen/lab-fleet/info/refs?service=git-upload-pack": context deadline exceeded
+
+  while `Ready=True` and every BundleDeployment is still `ready/nonModified`.
+  Nothing is wrong with the deployed state — this condition is about *polling for
+  new commits*, not about applying them. **Check the BundleDeployments before
+  reacting to it.**
+
+  Observed 2026-07-30: four repos polled fine at 03:32:58Z, all four failed
+  within 13s of each other at 03:36:3xZ, and then **no further poll happened for
+  28+ minutes**. `lab-ai` looked healthy only because unrelated `spec.paths`
+  patches kept forcing it to reconcile. The failure is not self-healing on a
+  short timescale: recovery needs a new commit, a write to the object, or the
+  `GITREPO_SYNC_PERIOD` resync — which Rancher sets to **`2h`** on the `gitjob`
+  deployment in `cattle-fleet-system`. There is no webhook configured
+  (`status.webhookCommit` is empty on every repo), so commit pickup depends
+  entirely on polling. A blip therefore costs real sync latency, not just a red
+  icon.
+
+  Clear it with any metadata write — no generation bump, no job, no redeploy:
+
+  ```bash
+  kubectl --context rancher -n fleet-default annotate gitrepo <name> \
+    probe.local/nudge="$(date -u +%s)" --overwrite
+  # ~20s later, confirm Stalled=False, then drop the annotation:
+  kubectl --context rancher -n fleet-default annotate gitrepo <name> probe.local/nudge-
+  ```
+
+  Verified harmless on all five repos: generations unchanged, no Jobs created in
+  `fleet-default`, no pod restarts or startTime changes downstream. Do **not**
+  reach for `fleet.cattle.io/force-update` — that forces an actual redeploy.
+
+- **cert-manager's DNS-01 flags exist only on the live object — omitting them
+  is a delayed, cluster-wide certificate outage.** The live `cert-manager`
+  Deployment carries two args the chart does not render:
+
+      --dns01-recursive-nameservers=1.1.1.1:53,8.8.8.8:53
+      --dns01-recursive-nameservers-only
+
+  Without them cert-manager runs its DNS-01 self-check against the cluster's own
+  resolver, which does not serve the public view of `ash4d.com`. It would never
+  observe the `_acme-challenge` TXT record it had just written, so every
+  Challenge would sit pending until it timed out. **Nothing breaks at adoption
+  time** — existing certs serve until renewal — which is what makes this
+  dangerous: it surfaces weeks later as certs expiring on every ash4d.com
+  hostname at once. Now captured as `extraArgs` in `15-cert-manager/values.yaml`.
+  Same class as Longhorn's replica count: a value that exists only on the live
+  object, invisible until much later.
+
+- **A mutable chart tag is not a pin — `helm template` it before trusting it.**
+  OpenShell is published only as `0.0.0-dev`, and that tag had *already* drifted
+  from the running release: pulling it on 2026-07-30 yielded an added
+  `server.workspaceStorageClass` value, added supervisor sidecar-topology
+  options, and a rewritten `_helpers.tpl`. Writing `version: "0.0.0-dev"` the
+  way `04-ollama` writes `version: "1.67.0"` looks identical but is not — it
+  would have silently *upgraded* openshell under the guise of adopting it. When
+  upstream offers no immutable version, vendor the chart. See
+  `20-openshell/fleet.yaml`.
+
+- **A lost chart is recoverable from the cluster running it.** Helm stores the
+  chart verbatim inside the release Secret, so `buzz-0.1.6` and openshell's
+  chart were both reconstructed from `sh.helm.release.v1.<rel>.v<n>` after their
+  sources turned out to exist nowhere on disk or on GitHub. Two traps when doing
+  this:
+  - Helm rewrites a dependency's `name` to its **alias** when storing a chart,
+    so the recovered `Chart.yaml` disagreed with the recovered `Chart.lock`
+    (`postgresql` vs `postgres`) and no `helm dependency build` was possible
+    until it was set back.
+  - Subcharts are **not** in the release Secret. Re-fetch them pinned to the
+    exact versions the recovered `Chart.lock` records, not the `0.19.x`-style
+    ranges the chart declares, or the render drifts. Commit the resulting
+    `charts/*.tgz` — Fleet does not run `helm dependency build`.
+
+- **Jobs do not belong in a Fleet bundle.** A `Job` spec is near-immutable, so a
+  Job inside a synced path makes Fleet fight the API server on every subsequent
+  change, and a Job that has already completed and been reaped reads as a
+  *creation* rather than a no-op. Three were split out and renamed `.yaml.txt`
+  so Fleet never applies them, following the
+  `09-mcp/github-mcp-token.secret.example.yaml.txt` convention:
+  `17-buzz/minio/buzz-minio-mkbucket.job.yaml.txt` and
+  `18-lab-memory/raw/eval-job.yaml.txt`.
+
+- **Fleet applies `*.json` too.** `nemoclaw-ops-agent/deploy/audit/` ships an
+  `audit-record.schema.json` next to its manifests; vendoring the directory
+  wholesale would break the bundle with `Object 'Kind' is missing`. This is the
+  same failure the `fleet.yaml` gotcha produces under `kubectl diff`, but here it
+  breaks the real sync, not just a pre-flight. Vendor manifests, not directories.
+
+- **`03-gpu/runtimeclass` is contested — k3s owns those objects.** The live
+  `nvidia` / `nvidia-experimental` RuntimeClasses carry
+  `objectset.rio.cattle.io/owner-gvk: k3s.cattle.io/v1, Kind=Addon` and
+  `owner-name: runtimes`: they come from k3s's bundled `runtimes` Addon, not from
+  this repo. Adopting the path aims Fleet and k3s's addon controller at the same
+  cluster-scoped objects, and losing that tug-of-war breaks GPU scheduling for
+  ollama, comfyui and dcgm-exporter at once. The path has been **removed from
+  `gitrepos/lab-nvidia-device-plugin.yaml` pending a decision** — leaving these to
+  k3s, like Traefik, is a legitimate outcome. Found 2026-07-29; not yet resolved.
 - **Longhorn replica count is the single most dangerous default here.** The chart
   defaults to 3 replicas; this one-node cluster runs 1. Adopting Longhorn without
   `02-longhorn/values.yaml`'s `persistence.defaultClassReplicaCount: 1` would
@@ -192,6 +305,18 @@ hand-tuning habits this cluster has (see the ComfyUI and Ollama notes below).
   | `harbor-pull` | `ai` | ollama-exporter (Harbor image) | ✅ |
   | `hermes-api-key`, `hermes-slack` | `hermes` | hermes-agent | ✅ |
   | `hermes-webui` | `hermes` | hermes-webui container | ❌ **create first** |
+  | `cloudflare-api-token` | `cert-manager` | `letsencrypt-dns` DNS-01 solver | ✅ |
+  | `buzz-relay` | `buzz` | relay **and** both bundled subcharts | ✅ |
+  | `karakeep` | `lab-memory` | `NEXTAUTH_SECRET` | ✅ |
+  | `karakeep-meilesearch` | `lab-memory` | `MEILI_MASTER_KEY` (chart's spelling) | ✅ |
+
+  The last two are prerequisites *because* `18-lab-memory/values.yaml` sets
+  `secrets.karakeep.enabled: false` and `secrets.meilesearch.enabled: false`.
+  Left enabled, the chart's `default (randAlphaNum 48)` would mint new values on
+  every render and the first Fleet sync would rotate both credentials —
+  invalidating every session and locking Meilisearch out of its own index. The
+  same reasoning as `hermes-webui`: a value that cannot live in a public repo
+  becomes an out-of-band prerequisite, not a committed value.
 
   The earlier note here also listed `WEBUI_SECRET_KEY` for open-webui. That was
   wrong: the live StatefulSet has no `secretKeyRef` env and no `envFrom`, and no
@@ -260,6 +385,135 @@ new self-registered cluster. To prevent that, uninstall fleet-agent from the hos
 itself — deleting the Cluster object here does not touch it.
 
 ## Adoption log
+
+`2026-07-30` — **Six new namespaces brought into the repo. BUILT AND
+PRE-FLIGHTED, NOT YET ADOPTED.** Nothing below is live: Fleet tracks `main`, and
+this work is on a branch. No GitRepo has been applied and no cluster object was
+modified. Every claim here is from a `kubectl diff` / `helm template` dry run.
+
+| Path | Source project | Pre-flight result |
+|---|---|---|
+| `15-cert-manager` | (live state) | clean **after** adding the two DNS-01 `extraArgs`; restarts controller once (arg order) |
+| `15-cert-manager/issuer` | ollama-code-mcp repo | `kubectl diff` clean |
+| `16-ash4d-origin` | (live state) | `kubectl diff` clean — true no-op |
+| `17-buzz` | buzz-relay repo + release Secret | renders **byte-identical** to live |
+| `17-buzz/minio` | buzz-relay `minio.yaml` | clean once the bootstrap Job is split out |
+| `18-lab-memory` | lab-memory repo | clean **after** fixing 2 drifts; rolls karakeep once |
+| `18-lab-memory/raw` | lab-memory repo | `kubectl diff` clean |
+| `19-nemoclaw` | nemoclaw-ops-agent repo | `kubectl diff` clean — no pod templates at all |
+| `20-openshell` | release Secret | renders identically to live, all 3 groups |
+| `09-mcp/ollama-code` | ollama-code-mcp repo | clean in place; **migration**, see runbook |
+
+Four repo-vs-live drifts were found and resolved in the repo's favour of *live*,
+because adoption must not change a running cluster:
+
+1. **cert-manager** — two DNS-01 args on the live Deployment, in no chart value.
+   Would have been a delayed cluster-wide cert outage. See Watch-outs.
+2. **karakeep `OLLAMA_BASE_URL`** — recorded release said
+   `http://192.168.7.153:11434`, live object said
+   `ollama-exporter.ai.svc.cluster.local:9401`. Identical shape to the
+   open-webui drift; live wins.
+3. **karakeep secrets** — the chart regenerates `NEXTAUTH_SECRET` and
+   `MEILI_MASTER_KEY` unless pinned, and the live values came from a git-ignored
+   file. Chart-managed Secrets disabled instead; both are now prerequisites.
+4. **openshell `sandboxNamespace`** — the nemoclaw repo's values say `nemoclaw`,
+   live says `nemoclaw-sandboxes`. The repo copy is stale and would have moved
+   the sandbox namespace out from under its own NetworkPolicy and RBAC.
+
+Deliberately **excluded** from the repo, with reasons:
+
+- **`registry` (Harbor).** Its objects carry `app.kubernetes.io/managed-by=Helm`
+  but there is **no release Secret and no `meta.helm.sh/release-name`
+  annotation** — Helm-labelled and ownerless, so the chart cannot be recovered
+  the way buzz and openshell were, and no values source survives. It is also
+  load-bearing: it serves the `ollama-exporter` image that the already-adopted
+  `04-ollama/ollama-exporter` path pulls. Needs its own session.
+- **`agent-sandbox-system`** — upstream
+  `registry.k8s.io/agent-sandbox/agent-sandbox-controller:v0.5.0`, third-party,
+  no source in `~/Developer`, no ownership markers.
+- **`managed-agent`** — a single `registry.suse.com/bci/python:3.12` worker with
+  no ownership markers and no identifiable source. Looks like a scratch
+  experiment; identify it before adopting.
+- **`trading-agent`** — 0 workloads, not deployable, not under active
+  development. Excluded at the user's direction.
+- **`ollama-exporter`** — already Fleet-managed as `04-ollama/ollama-exporter`.
+  The `~/Developer/ollama-exporter` directory is the Go source for the image (its
+  own OSS project, with goreleaser/CHANGELOG/LICENSE) and does not belong here.
+- **`ash4d.com` the project** — this repo is already ash4d.com's `lab/`
+  submodule, so vendoring it back would be circular. Only its manifests could
+  come in, and its `deploy/` directory turned out to target the **GCP** cluster
+  (namespace `ash4d`, absent here; `ingressClassName: nginx` on a Traefik
+  cluster), so `16-ash4d-origin` was reconstructed from live instead.
+
+Guiding rule confirmed by all of the above: **lab-fleet holds cluster state, not
+application source.** Projects with their own repo keep it; only their manifests
+land here. Source is vendored only when it is orphaned (`08-indexer`) or when a
+chart exists nowhere else (`17-buzz`, `20-openshell`).
+
+`2026-07-29` — **`lab-ai`: the five raw-manifest paths adopted. All no-ops.**
+`08-indexer`, `09-mcp`, `07-comfyui`, `06-milvus/attu`,
+`04-ollama/ollama-exporter` — added one at a time, each reaching
+`ready=true, nonModified=true` on its first sync with no errors and no
+`ErrApplied` retries. Each path became its own Helm release at revision 1
+(`lab-ai-<path>`), so the `ai` namespace now holds five Fleet releases alongside
+the three pre-existing chart releases.
+
+**The three Helm paths (`04-ollama`, `05-open-webui`, `06-milvus`) are
+deliberately NOT yet added** — pre-flight says they should be no-ops too (see
+below), but they were left for a separate approved step.
+
+Evidence, whole-namespace snapshot before vs after all five:
+
+| Check | Result |
+|---|---|
+| Pod UIDs / startTimes / restart counts | **all identical** — nothing restarted |
+| ReplicaSets (46 of them) | **identical**, no new ones, same replica counts |
+| CronJob `generation` | **unchanged** (5 / 2 / 2) |
+| Deployment `generation` | +1 on each of the 8 adopted — inert, as with node-red |
+| StatefulSets (`open-webui`, `milvus-etcd`) | untouched — not in these bundles |
+| `ollama-exporter` 9401 proxy | live-probed, returns `{"version":"0.32.0"}` |
+| ComfyUI | still `replicas: 0`, not scaled up |
+| `attu` Service | still `ClusterIP`, Ingress intact |
+
+Note the generation bump lands on Deployments but **not** on CronJobs, which
+narrows the earlier node-red observation: Helm rewrites the Deployment spec to
+identical values, and CronJobs come out untouched entirely.
+
+### Pre-flight that actually predicts Helm adoption — use this, not `helm get manifest`
+
+The watch-out below says to diff `helm get manifest <release>` against live. That
+catches out-of-band edits, but it does **not** answer the question that matters:
+*what will Fleet apply?* Render the chart the way Fleet will — pinned version plus
+the repo's own `values.yaml` — and diff **that** against live:
+
+```bash
+helm template <release> <repo>/<chart> --version <pinned> -n ai \
+  -f <dir>/values.yaml --no-hooks > /tmp/render.yaml
+kubectl diff -n ai -f /tmp/render.yaml
+```
+
+`open-webui` is exactly why this matters, and the two checks disagree on it:
+
+- `helm get manifest open-webui` vs live → **shows a diff**: the recorded release
+  still says `ollama:11434` for `OLLAMA_BASE_URLS` / `RAG_OLLAMA_BASE_URL`, while
+  live was hand-edited to `ollama-exporter:9401`.
+- `helm template` with `05-open-webui/values.yaml` vs live → **clean**, because
+  the repo's values were already corrected to 9401.
+
+So the alarming diff is *recorded-release* drift, not repo drift, and adoption
+will close it rather than change the cluster. Reading only the first check would
+have stalled this path for no reason. All three charts render clean against live:
+`04-ollama` (release at revision 14), `05-open-webui`, `06-milvus`.
+
+Two gotchas when running these diffs:
+
+- **`kubectl diff -R -f <dir>` fails on the bundle's own `fleet.yaml`** —
+  `Object 'Kind' is missing`. It is Fleet config, not a manifest. Exclude it:
+  `find <dir> -name '*.yaml' -not -name 'fleet.yaml'`.
+- **`helm template` emits `ollama-test-connection`**, a Pod annotated
+  `helm.sh/hook: test`. It is absent from the cluster and will stay absent —
+  test hooks run only on `helm test`, never on install/upgrade, so Fleet will not
+  create it. Pass `--no-hooks` so it does not show up as a phantom addition.
 
 `2026-07-29` — **`lab-emby`, `lab-resilio`, `lab-hermes` adopted.** All four
 namespaces now Fleet-managed; every BundleDeployment reports
@@ -336,6 +590,60 @@ expect it on every adopted Deployment, and do not read it as a restart.
 Remaining namespaces, in order: `lab-ai` (eight paths, one at a time),
 `lab-metallb-system`, `lab-nvidia-device-plugin`,
 `lab-cattle-monitoring-system`, then `lab-longhorn-system` last.
+
+**Next step:** `lab-ai`'s three Helm paths — `04-ollama`, then `05-open-webui`,
+then `06-milvus`. Pre-flight is already done and all three render clean against
+live (see the `lab-ai` entry above). Widen by patching `spec.paths` — there is
+deliberately **no `gitrepos/lab-ai.yaml`** to apply, because a single file cannot
+express a staged rollout without inviting a one-shot widen. The exact patch and
+verify commands are in `gitrepos/README.md`.
+
+### `09-mcp/ollama-code` — a migration, not an adoption (runbook)
+
+Everything else in this repo is adopt-as-no-op. This path is the exception: it
+moves the ollama-code MCP server out of its own `ollama-code` namespace into
+`ai`. It **will** take `mcp-ollama.ash4d.com` down briefly. Downtime was
+explicitly accepted (2026-07-30).
+
+Why it cannot be done as a parallel run: Traefik would see two Ingresses both
+claiming `mcp-ollama.ash4d.com` and the winner is undefined; and
+`mcp-ollama-ash4d-tls` is namespace-scoped, so the Certificate does not follow
+the Ingress — cert-manager's ingress-shim has to issue a fresh one in `ai` from
+the `cert-manager.io/cluster-issuer` annotation, which is a full DNS-01 round
+trip.
+
+Pre-flight already done: the repo manifests are `kubectl diff`-clean against the
+live objects in `ollama-code`, so placement is the only thing changing. None of
+them hardcodes a namespace, so `defaultNamespace: ai` is what moves it.
+
+    # 1. Remove the old Ingress FIRST so the host is never claimed twice.
+    kubectl --context sdf1 -n ollama-code delete ingress ollama-code-mcp
+
+    # 2. Add the path to lab-ai (see gitrepos/README.md for the full list).
+    kubectl --context rancher -n fleet-default patch gitrepo lab-ai --type=merge \
+      -p '{"spec":{"paths":["08-indexer","09-mcp","07-comfyui","06-milvus/attu","04-ollama/ollama-exporter","09-mcp/ollama-code"]}}'
+
+    # 3. Confirm the new bundle is Ready, and that lab-ai-09-mcp did NOT change
+    #    resource count (proving the nested fleet.yaml split it into its own bundle).
+    kubectl --context rancher -n cluster-fleet-default-c-nnzn9-eaf6ebdbb298 \
+      get bundledeployments -o custom-columns=\
+    'NAME:.metadata.name,READY:.status.ready,NONMODIFIED:.status.nonModified' | grep lab-ai
+
+    # 4. Wait for the new Certificate to go Ready in ai (DNS-01, allow a few minutes).
+    kubectl --context sdf1 -n ai get certificate mcp-ollama-ash4d-tls -w
+
+    # 5. Only once step 4 is Ready, retire the old namespace.
+    kubectl --context sdf1 delete namespace ollama-code
+
+**Rollback** (before step 5, which is the point of no return): remove
+`09-mcp/ollama-code` from `spec.paths`, then re-apply the original manifests into
+`ollama-code` from the `ollama-code-mcp` repo (`kubectl apply -n ollama-code -k
+k8s/`). The old namespace still holds its own Certificate until step 5, so
+rollback before then costs only another DNS-01 round trip.
+
+Do not vendor `k8s/cert-manager-issuer.yaml` from that repo — it declares the
+same cluster-scoped `letsencrypt-dns` ClusterIssuer that `15-cert-manager/issuer`
+owns, and two bundles declaring one cluster-scoped object contend for it.
 
 ## Drift reconciliation log
 

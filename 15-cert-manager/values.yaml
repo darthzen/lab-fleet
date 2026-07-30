@@ -1,0 +1,29 @@
+# cert-manager values, reconciled against the LIVE Deployment (2026-07-30).
+#
+# crds.enabled is the only value the recorded Helm release actually supplied.
+# cert-manager v1.20 ships its CRDs inside the chart rather than as a separate
+# manifest set, so this is what keeps them managed.
+crds:
+  enabled: true
+
+# ---------------------------------------------------------------------------
+# extraArgs is NOT in the recorded release. Both flags below were on the live
+# Deployment and absent from the chart's render, i.e. they were set out-of-band.
+# Adopting without them would be a silent, delayed outage:
+#
+# cert-manager's DNS-01 self-check confirms the _acme-challenge TXT record is
+# visible before asking Let's Encrypt to validate. With no override it asks the
+# cluster's own resolver. This cluster's DNS does not serve the public view of
+# ash4d.com, so the check would never observe the record it had just written,
+# the Challenge would sit pending until it timed out, and issuance would fail.
+#
+# Nothing breaks at adoption time — existing certs keep working until renewal.
+# It would surface weeks later as certificates expiring across every
+# ash4d.com hostname at once (attu, hermes, karakeep + the 3 MCP hosts,
+# registry).
+#
+# Same class of hazard as Longhorn's replica count: a value that exists only on
+# the live object, whose absence stays invisible until much later.
+extraArgs:
+  - --dns01-recursive-nameservers=1.1.1.1:53,8.8.8.8:53
+  - --dns01-recursive-nameservers-only
