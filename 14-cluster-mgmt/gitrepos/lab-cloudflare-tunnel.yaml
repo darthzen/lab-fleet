@@ -1,0 +1,40 @@
+# Fleet GitRepo — cloudflare-tunnel namespace.
+#
+# This is the Fleet `GitRepo` CUSTOM RESOURCE (gitrepos.fleet.cattle.io), not a
+# git repository: it points Fleet at the existing lab-fleet repo and tells it
+# which paths to render. It lives on the RANCHER CONTROLLER
+# (192.168.7.148, kubectl context `rancher`), so it is not part of any bundle here.
+#
+#   kubectl --context rancher apply -f 14-cluster-mgmt/gitrepos/lab-cloudflare-tunnel.yaml
+#
+# One GitRepo per namespace — see gitrepos/README.md.
+#
+# LOW RISK for the cluster, HIGH STAKES for the public site: two stateless
+# cloudflared pods, no PVCs, no inbound ports — but once DNS cuts over, these
+# pods ARE the public entry for ash4d.com. Prerequisite: Secret
+# `cloudflared-credentials` must be seeded by hand first (see
+# 23-cloudflare-tunnel/fleet.yaml for why it is not in OpenBao).
+apiVersion: fleet.cattle.io/v1alpha1
+kind: GitRepo
+metadata:
+  name: lab-cloudflare-tunnel
+  namespace: fleet-default
+spec:
+  repo: https://github.com/darthzen/lab-fleet
+  branch: main
+  # Explicit polling interval — see lab-ash4d-origin.yaml for the 2026-07-30
+  # gitjob dormancy incident that motivates stating it per-repo.
+  pollingInterval: 60s
+  paths:
+    - 23-cloudflare-tunnel
+  # `ash4d-lab` is a bespoke label already on the sdf1 cluster (c-nnzn9). Chosen
+  # over management.cattle.io/cluster-name, which Rancher owns and may rewrite.
+  targets:
+    - clusterSelector:
+        matchLabels:
+          ash4d-lab: ""
+  # correctDrift ON from day one — this bundle was born in git, nothing was
+  # adopted, so there is no live hand-tuning to protect. Change the repo, not
+  # the cluster. See FLEET-WIRING.md.
+  correctDrift:
+    enabled: true
