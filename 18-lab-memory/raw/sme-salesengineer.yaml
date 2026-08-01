@@ -7,6 +7,11 @@
 #
 # DNS prerequisite (mirrors mcp-memory): mcp-sme-salesengineer.ash4d.com A record
 # -> 192.168.7.150 (shared Traefik VIP) before cert-manager can complete DNS-01.
+#
+# Both readers below pin `mcp` for the reason spelled out in
+# mcp-memory.deployment.yaml: unpinned, pip pulls a release without
+# `mcp.server.fastmcp` and the pod CrashLoopBackOffs. Keep the three pins in
+# step. Do not reflow the args blocks -- their bytes decide the pod-template hash.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -32,7 +37,7 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              pip install --quiet mcp pymilvus requests &&
+              pip install --quiet mcp==1.28.1 pymilvus requests &&
               mkdir -p /src/lab_memory_mcp &&
               cp /app/retrieval.py /app/__init__.py /app/server.py /src/lab_memory_mcp/ &&
               cd /src && exec python3 -m lab_memory_mcp.server
@@ -148,7 +153,7 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              pip install --quiet mcp pymilvus requests &&
+              pip install --quiet mcp==1.28.1 pymilvus requests &&
               mkdir -p /src/lab_memory_mcp &&
               cp /app/retrieval.py /app/__init__.py /app/server.py /src/lab_memory_mcp/ &&
               cd /src && exec python3 -m lab_memory_mcp.server
