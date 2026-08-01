@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "dce7d31c4429",
+  "strategy": "manual-commit",
+  "branch": "fix-lab-memory-mcp-pin",
+  "checkpoints_count": 6,
+  "files_touched": [
+    "14-cluster-mgmt/gitrepos/lab-ash4d-origin.yaml",
+    "14-cluster-mgmt/gitrepos/lab-buzz.yaml",
+    "14-cluster-mgmt/gitrepos/lab-cert-manager.yaml",
+    "14-cluster-mgmt/gitrepos/lab-emby.yaml",
+    "14-cluster-mgmt/gitrepos/lab-hermes.yaml",
+    "14-cluster-mgmt/gitrepos/lab-lab-memory.yaml",
+    "14-cluster-mgmt/gitrepos/lab-nemoclaw.yaml",
+    "14-cluster-mgmt/gitrepos/lab-node-red.yaml",
+    "14-cluster-mgmt/gitrepos/lab-openchoreo.yaml",
+    "14-cluster-mgmt/gitrepos/lab-openshell.yaml",
+    "14-cluster-mgmt/gitrepos/lab-resilio.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/dc/e7d31c4429/0/metadata.json",
+      "transcript": "/dc/e7d31c4429/0/full.jsonl",
+      "compact_transcript": "/dc/e7d31c4429/0/transcript.jsonl",
+      "content_hash": "/dc/e7d31c4429/0/content_hash.txt",
+      "prompt": "/dc/e7d31c4429/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 113,
+    "cache_creation_tokens": 200672,
+    "cache_read_tokens": 4731484,
+    "output_tokens": 49940,
+    "api_call_count": 60
+  }
+}

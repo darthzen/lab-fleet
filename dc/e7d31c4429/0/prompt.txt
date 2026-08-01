@@ -1,0 +1,21 @@
+What's the easiest way to disable the fleet openchoreo deployment while I'm not using it?
+
+---
+
+Is fleet going to override that and try to turn it all back on?
+
+---
+
+Okay. It's paused and I set the replicas to 0.
+
+---
+
+Go ahead and run it
+
+---
+
+Good point. Go ahead and spin those all back up.
+
+---
+
+/handoff
