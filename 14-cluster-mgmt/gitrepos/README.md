@@ -57,7 +57,7 @@ adopted, rolled back, or paused independently of every other.
 | `lab-node-red` | `node-red` | `12-node-red` | low |
 | `lab-emby` | `emby` | `11-emby` | low |
 | `lab-resilio` | `resilio` | `13-resilio` | low |
-| `lab-ash4d-origin` | `ash4d-origin` | `16-ash4d-origin` | low |
+| `ash4d-site` | `ash4d-origin` | `deploy` **in `darthzen/ash4d.com`** | low — replaced `lab-ash4d-origin` 2026-07-31 |
 | `lab-hermes` | `hermes` | `10-hermes` | low–med — needs `hermes-webui` Secret |
 | `lab-ai` | `ai` | 10 paths (04→09, 21) | med — **no `.yaml` file, staged by hand — see below** |
 | `lab-openshell` | `openshell` | `20-openshell` | med — **after `lab-nemoclaw`**; vendored chart |
@@ -120,7 +120,7 @@ Two ordering constraints are hard, not preferences:
   CRDs, so deleting the GitRepo deletes every `Certificate`, `Issuer` and
   `Order` object in the cluster. Roll back by removing the path.
 
-`lab-ash4d-origin`, `lab-nemoclaw` and `lab-openshell` hold a single path each,
+`ash4d-site`, `lab-nemoclaw` and `lab-openshell` hold a single path each,
 so there is nothing to stage for them.
 
 ## `lab-ai` deliberately has no `.yaml` file
@@ -262,9 +262,10 @@ goal eventually but will fight this cluster's hand-tuning habits.
 | `lab-cattle-monitoring-system` | not yet applied |
 | `lab-longhorn-system` | not yet applied |
 
-`c-nnzn9` (sdf1) is the only Fleet-managed downstream; the junk
-`cluster-ee8f7993b3a6` was deleted 2026-07-29. So the `ash4d-lab: ""` selector in
-these files resolves to exactly one cluster.
+`c-nnzn9` (sdf1) is the only Fleet-managed downstream; `cluster-ee8f7993b3a6` was
+deleted 2026-07-29. So the `ash4d-lab: ""` selector in these files resolves to
+exactly one cluster. (That cluster was **not** junk — it is the live GCP edge, and
+deleting it stranded its agent. See the 2026-07-31 correction in FLEET-WIRING.md.)
 
 ## Prerequisite: the fleet-agent must be able to register
 

@@ -65,16 +65,18 @@ token was needed. Both were wrong as of 2026-07-29:
 - `c-nnzn9` is registered in workspace **`fleet-default`**.
 - At the start of this work there was a second GitRepo,
   `fleet-default/ash4d-site` → `https://github.com/darthzen/ash4d.com`,
-  `paths: ["deploy"]`, target `site=ash4d`, which resolved to the junk
+  `paths: ["deploy"]`, target `site=ash4d`, which resolved to the then-misread
   `cluster-ee8f7993b3a6` rather than `c-nnzn9`. Both it and its bundle were gone
-  later the same session (not removed as part of this work) and the junk cluster
+  later the same session (not removed as part of this work) and that cluster
   has since been deleted — see the cleanup note below. **`c-nnzn9` is now the only
   Fleet-managed downstream**, alongside `fleet-local/local`.
 
 **Target label for this cluster:** `c-nnzn9` already carries a bespoke
 `ash4d-lab: ""` label — use that rather than
 `management.cattle.io/cluster-name`, which is Rancher-managed. (The old
-`site=ash4d` selector belonged to the deleted junk cluster; do not reuse it.)
+`site=ash4d` selector belonged to `cluster-ee8f7993b3a6`, deleted 2026-07-29 —
+which was the live GCP edge, not junk. See the 2026-07-31 correction under
+"Controller cleanup".)
 
 ```yaml
 targets:
@@ -645,6 +647,54 @@ same node-red pod UID, 0 restarts, bundle still 1/1).
 If that host ever comes back online its agent will re-register and reappear as a
 new self-registered cluster. To prevent that, uninstall fleet-agent from the host
 itself — deleting the Cluster object here does not touch it.
+
+### 🔴 CORRECTION `2026-07-31` — "presumed gone" was wrong. That host is the GCP edge, and it is production.
+
+`cluster-ee8f7993b3a6` is `ash4d-1` (Tailscale `100.104.124.100`), the GCP e2-small
+that fronts ash4d.com. It never went anywhere — it was serving the public site
+throughout, and still is. Its k3s runs `ingress-nginx`, `cert-manager`, the
+`ash4d/site` Deployment and the `ash4d/cache-proxy` Deployment.
+
+What actually happened, in order:
+
+1. `2026-07-17 11:00 UTC` — Rancher's Let's Encrypt cert renewed. The agent's
+   stored credential in `cattle-fleet-system/fleet-agent` embeds an `apiServerCA`
+   that no longer matched it, so every call failed
+   `x509: certificate signed by unknown authority`. That is the "last checked in
+   2026-07-17" above — a **credential** expiry, not a dead host.
+2. `2026-07-29` — the `agent-tls-mode → system-store` fix rewrote the agent's
+   *configmap*, but the agent still builds its client from that stale credential
+   secret. It could not recover, which is what made it look dead.
+3. `2026-07-29` — deleting the Cluster cascaded away the bootstrap secret, so the
+   agent's re-registration fallback started failing too:
+   `looking up secret cattle-fleet-system/fleet-agent-bootstrap: not found`. It has
+   looped that pair of errors once a minute ever since.
+
+**Ruled out** while diagnosing on 2026-07-31, so nobody re-treads it: the network is
+fine (`/ping` returns `pong` from inside the agent pod), DNS is fine (the pod
+resolves `rancher.ash4d.com` → `192.168.7.148`, same as the host), and the agent's
+own CA bundle verifies the current Rancher cert (`openssl verify` → `0 (ok)`
+against `/var/lib/ca-certificates/ca-bundle.pem` pulled from the pod). Both
+clusters run the identical `rancher/fleet-agent:v0.15.4`. It is purely a stale
+credential with no path to re-register.
+
+Why sdf1 was unaffected: `c-nnzn9` is **Rancher-managed** and gets its CA handed to
+it. `cluster-ee8f7993b3a6` was **self-registered** and had to verify
+`https://rancher.ash4d.com` itself. Self-registered clusters are the ones a cert
+rotation can strand.
+
+**The site does not need that cluster.** ash4d.com is hosted on sdf1 and proxied by
+the edge — see `gitrepos/ash4d-site.yaml`. The edge's registration is now a
+separate, non-urgent question: re-register it (fresh `ClusterRegistrationToken` →
+new `fleet-agent-bootstrap`) if its nginx config should be Fleet-managed, or
+uninstall fleet-agent from the host to stop the log noise. Until then the edge's
+`cache-proxy` and its ConfigMap exist **only on the cluster**, in no git repo.
+
+**Lesson:** a self-registered cluster whose agent stops checking in is not evidence
+the host is gone. Confirm at the host — `tailscale status`, or just curl the
+service it serves — before deleting its Cluster object. Deleting it destroys the
+bootstrap secret and converts a recoverable credential failure into one that needs
+a manual re-register.
 
 ## Adoption log
 

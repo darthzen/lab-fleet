@@ -1,0 +1,65 @@
+# Fleet GitRepo — ash4d-origin namespace: the REAL ash4d.com site.
+#
+# This is the Fleet `GitRepo` CUSTOM RESOURCE (gitrepos.fleet.cattle.io), not a
+# git repository. It lives on the RANCHER CONTROLLER (192.168.7.148, kubectl
+# context `rancher`), so it is not part of any bundle here.
+#
+#   kubectl --context rancher apply -f 14-cluster-mgmt/gitrepos/ash4d-site.yaml
+#
+# One GitRepo per namespace — see gitrepos/README.md.
+#
+# REPLACES `lab-ash4d-origin`, which served a placeholder ConfigMap from this
+# repo's `16-ash4d-origin` path. Both that GitRepo and that path are removed in
+# the same commit. The namespace and workload names are unchanged, so this is a
+# content change, not a re-platforming.
+#
+# THE ONLY GitRepo POINTING AT A REPO OTHER THAN lab-fleet. That is deliberate:
+# `darthzen/ash4d.com` holds the site source, and its CI pins the freshly built
+# image tag into `deploy/deployment.yaml` on every push to `site/**`. Pointing
+# Fleet at that directory is what closes the loop from a content edit to a
+# rollout with no manual step. Keeping the manifests here instead would strand
+# the CI pin in a repo nothing reads.
+#
+# Safe despite ash4d.com carrying `lab/` as a submodule of THIS repo: Fleet does
+# not init submodules, and `paths: ["deploy"]` never descends into `lab/`, so the
+# empty gitlink is never rendered. Do NOT add `lab` to paths.
+#
+# The site is hosted HERE, on sdf1. The GCP box is only a caching nginx reverse
+# proxy in front of it:
+#
+#   ash4d.com → GCP edge (TLS + proxy_cache) → Tailscale → 192.168.7.150
+#     → Host: origin.ash4d.com → ash4d-origin/origin
+#
+# An earlier `fleet-default/ash4d-site` GitRepo existed with this same name and
+# path, targeting `site=ash4d`, and resolved to the self-registered GCP cluster
+# rather than sdf1. That cluster was deleted on 2026-07-29 — see the corrected
+# controller-cleanup note in FLEET-WIRING.md. This one targets `ash4d-lab`, the
+# sdf1 label, which is the right home for it.
+apiVersion: fleet.cattle.io/v1alpha1
+kind: GitRepo
+metadata:
+  name: ash4d-site
+  namespace: fleet-default
+spec:
+  repo: https://github.com/darthzen/ash4d.com
+  branch: main
+  # Explicit polling interval. Fleet's default is 15s, but this cluster's
+  # gitjob runs with `gitjob.syncPeriod: 2h` (a Rancher fleet-chart value), and
+  # on 2026-07-30 four GitRepos went dormant for 28+ minutes after a single
+  # transient `context deadline exceeded` against github.com -- they only
+  # recovered when an external write forced a reconcile. Stating the interval
+  # here bounds how stale a repo can get and makes the intent reviewable in git
+  # rather than depending on a controller-wide default. See FLEET-WIRING.md.
+  pollingInterval: 60s
+  paths:
+    - deploy
+  # `ash4d-lab` is a bespoke label already on the sdf1 cluster (c-nnzn9). Chosen
+  # over management.cattle.io/cluster-name, which Rancher owns and may rewrite.
+  targets:
+    - clusterSelector:
+        matchLabels:
+          ash4d-lab: ""
+  # correctDrift ON, matching every other GitRepo on this controller: change the
+  # repo, not the cluster.
+  correctDrift:
+    enabled: true
