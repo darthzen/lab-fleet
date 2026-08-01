@@ -1,7 +1,0 @@
-# Values as supplied to the live release, recovered from the
-# Helm release secret (openshell/sh.helm.release.v1.openshell.v3).
-server:
-  auth:
-    allowUnauthenticatedUsers: true
-  sandboxImagePullPolicy: IfNotPresent
-  sandboxNamespace: nemoclaw-sandboxes
