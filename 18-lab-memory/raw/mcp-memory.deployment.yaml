@@ -1,6 +1,15 @@
 # Interim deployment: BCI python + pip at start, source from ConfigMap
 # (lab-memory-mcp-src). Proper image from mcp/Dockerfile via Harbor is the
 # follow-up, mirroring ollama-code-mcp.
+#
+# `mcp` IS PINNED, and must stay pinned. Unpinned, pip resolves to a release
+# that no longer exports `mcp.server.fastmcp`; server.py dies on import and the
+# pod CrashLoopBackOffs. The pin was applied to the live object on 2026-07-31
+# and then reverted by correctDrift, because it never reached this file --
+# which is why all three MCP readers were down. When the Harbor image lands,
+# the same bound belongs in mcp/requirements.txt (today `mcp>=1.6.0`).
+#
+# Do not reflow the args block: its bytes decide the pod-template hash.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -26,7 +35,7 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              pip install --quiet mcp pymilvus requests &&
+              pip install --quiet mcp==1.28.1 pymilvus requests &&
               mkdir -p /src/lab_memory_mcp &&
               cp /app/retrieval.py /app/__init__.py /app/server.py /src/lab_memory_mcp/ &&
               cd /src && exec python3 -m lab_memory_mcp.server
