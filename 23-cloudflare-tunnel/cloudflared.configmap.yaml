@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflared
+  namespace: cloudflare-tunnel
+data:
+  config.yaml: |
+    tunnel: a7ac2482-e55f-49ea-a352-0028a54748c3
+    credentials-file: /etc/cloudflared/creds/credentials.json
+    metrics: 0.0.0.0:2000
+    no-autoupdate: true
+    ingress:
+      # Proving hostname — routes to the real site via Traefik with the
+      # origin's Host header, so the full chain is exercised before any
+      # production DNS record moves. Delete this rule (and the tunnel-test
+      # CNAME) once cutover is done.
+      - hostname: tunnel-test.ash4d.com
+        service: http://traefik.kube-system.svc.cluster.local:80
+        originRequest:
+          httpHostHeader: origin.ash4d.com
+      # Everything Traefik already routes keeps its existing Ingress object.
+      - hostname: ash4d.com
+        service: http://traefik.kube-system.svc.cluster.local:80
+      - hostname: www.ash4d.com
+        service: http://traefik.kube-system.svc.cluster.local:80
+      - hostname: buzz.ash4d.com
+        service: http://traefik.kube-system.svc.cluster.local:80
+      # Ollama has no Ingress — straight to its LoadBalancer VIP.
+      - hostname: ollama.ash4d.com
+        service: http://192.168.7.153:11434
+      - service: http_status:404

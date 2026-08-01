@@ -1,0 +1,24 @@
+# Fleet bundle — Cloudflare Tunnel (cloudflared) for ash4d.com.
+#
+# Replaces the GCP edge VM (35.208.14.166) as the public entry point. Two
+# cloudflared replicas hold outbound QUIC connections to Cloudflare; public
+# hostnames route through the tunnel to Traefik (or straight to the Ollama
+# LoadBalancer VIP, which has no Ingress). No inbound ports are opened.
+#
+# Tunnel: ash4d-home, a7ac2482-e55f-49ea-a352-0028a54748c3, created
+# 2026-08-01 via API (config_src: local — this ConfigMap is authoritative,
+# the CF dashboard's ingress editor is not).
+#
+# MANUAL PREREQUISITE — Secret `cloudflared-credentials` (key
+# credentials.json) must exist in this namespace before the Deployment can
+# start. Canonical copy: ~/Developer/keys/cloudflare/ash4d-home-tunnel.json
+# on Rick's Mac. It is deliberately NOT in OpenBao: openbao-0 runs `server
+# -dev` (in-memory), so a pod restart would wipe it and the public site
+# would stay down after any power event until someone reseeded it. Revisit
+# if OpenBao moves to server mode with persistent storage.
+#
+# Image is cloudflare/cloudflared, not a BCI wrapper — deviation from the
+# SUSE-base default authorized by Rick 2026-08-01: cloudflared is a single
+# static Go binary on a vendor-signed release channel, and a BCI wrapper
+# adds a build/update path without reducing attack surface.
+defaultNamespace: cloudflare-tunnel
