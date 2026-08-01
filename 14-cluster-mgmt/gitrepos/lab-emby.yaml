@@ -36,8 +36,12 @@ spec:
     - clusterSelector:
         matchLabels:
           ash4d-lab: ""
-  # correctDrift OFF until every namespace is adopted and verified. Turning it on
-  # makes Fleet revert out-of-band `kubectl edit`s — the eventual goal, but it
-  # will fight this cluster's hand-tuning habits (GPU pins, context sizes).
+  # correctDrift ON (2026-07-30) — the "eventual goal" this block used to defer.
+  # Enabled fleet-wide once adoption was complete and every bundle reported no
+  # `Modified`, i.e. there was no live hand-tuning left for Fleet to revert. The
+  # one known blocker was cert-manager's two out-of-band DNS-01 flags; those now
+  # live in `15-cert-manager/values.yaml`, so correction no longer strips them.
+  # From here, out-of-band `kubectl edit`s are reverted: change the repo, not
+  # the cluster. See FLEET-WIRING.md.
   correctDrift:
-    enabled: false
+    enabled: true

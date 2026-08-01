@@ -101,10 +101,26 @@ spec:
     - clusterSelector:
         matchLabels:
           ash4d-lab: ""
-  # correctDrift OFF, and here it matters more than usual: OpenChoreo's own
-  # controllers write to objects in these namespaces as part of normal
-  # operation. Turning this on before understanding which of those writes Fleet
-  # would consider drift is how you get a controller and Fleet fighting over
-  # the same object. Leave it off.
+  # correctDrift ON (2026-07-30) — enabled fleet-wide, and here that is a
+  # DELIBERATE OVERRIDE of the caution this block used to carry, not a sign the
+  # concern was retired. It was not. OpenChoreo's own controllers do write to
+  # objects in these namespaces as part of normal operation, and a controller
+  # and Fleet fighting over the same object is still the failure mode to watch
+  # for. What is missing is evidence either way: when this was flipped the
+  # stack had been up 8 hours, idle, with no Project or Component deployed, so
+  # no controller had yet written anything for Fleet to correct. Zero
+  # `Modified` here is a weak signal, not a clean bill of health.
+  #
+  # The first real workload is when this gets tested. If a bundle starts
+  # flapping between Modified and Ready, or the agent logs repeated corrections
+  # on the same object, set this back to `false` HERE FIRST — before touching
+  # the other ten GitRepos, which do not share this risk.
+  #
+  # Related, and found the hard way on 2026-07-30: the Prometheus and
+  # Alertmanager StatefulSets in `openchoreo-observability-plane` are owned by
+  # CRs reconciled by `rancher-monitoring-operator` in `cattle-monitoring-system`
+  # — a controller entirely outside this GitRepo. Fleet manages the CRs, not
+  # those StatefulSets, so the two should not collide. Worth re-checking if
+  # drift correction starts behaving oddly in that namespace.
   correctDrift:
-    enabled: false
+    enabled: true
