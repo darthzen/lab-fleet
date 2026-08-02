@@ -1,0 +1,23 @@
+[Unit]
+Description=V100 thermal guard (sdf1)
+Documentation=file:///opt/gpu-guard/gpu-guard.sh
+# Wants, not Requires: the guard is most needed exactly when the cluster is
+# unhealthy, so it must not refuse to start because k3s did not.
+Wants=k3s.service network-online.target
+After=k3s.service network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/gpu-guard/gpu-guard.sh daemon
+Restart=always
+RestartSec=10
+# Needs root for nvidia-smi -pl and for /root/.kube/config.
+User=root
+Nice=-5
+# A thermal guard that gets OOM-killed is worse than none.
+OOMScoreAdjust=-500
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
