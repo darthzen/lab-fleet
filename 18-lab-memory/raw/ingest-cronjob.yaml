@@ -12,7 +12,12 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      activeDeadlineSeconds: 840
+      # Raised 840 -> 2400 (2026-08-02) so the EMBED_EPOCH=2 full re-embed
+      # (~3,400 chunks) finishes in one pass instead of being killed mid-run and
+      # converging over several cycles. Normal incremental runs take a couple of
+      # minutes; concurrencyPolicy: Forbid skips overlapping ticks while the long
+      # pass is active. Revert to 840 once the corpus has converged.
+      activeDeadlineSeconds: 2400
       template:
         spec:
           restartPolicy: Never
@@ -33,6 +38,12 @@ spec:
                 # reconciles every collection from a single fetch snapshot.
                 - name: SME_ROUTES
                   value: "ipnsyy1t55vakjtzkn25y1p0:sme_salesengineer"
+                # Re-embed trigger. Folded into the stored modified_at, so bumping
+                # this makes the next reconcile see every document as changed and
+                # re-embed the whole corpus. Bumped to 2 (2026-08-02) for the
+                # markdown-aware chunker + context-header embedding.
+                - name: EMBED_EPOCH
+                  value: "2"
                 - name: KARAKEEP_API_KEY
                   valueFrom:
                     secretKeyRef:
