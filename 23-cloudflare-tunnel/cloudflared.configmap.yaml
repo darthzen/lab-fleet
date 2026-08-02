@@ -10,19 +10,12 @@ data:
     metrics: 0.0.0.0:2000
     no-autoupdate: true
     ingress:
-      # Proving hostname — routes to the real site via Traefik with the
-      # origin's Host header, so the full chain is exercised before any
-      # production DNS record moves. Delete this rule (and the tunnel-test
-      # CNAME) once cutover is done.
-      - hostname: tunnel-test.ash4d.com
-        service: http://traefik.kube-system.svc.cluster.local:80
-        originRequest:
-          httpHostHeader: origin.ash4d.com
+      # ash4d.com, www and tunnel-test were removed 2026-08-02: the site moved to
+      # a Cloudflare Workers static-assets deployment, so apex and www are Worker
+      # custom-domain records rather than tunnel CNAMEs and these rules could
+      # never fire. The tunnel-test CNAME and the ash4d-origin namespace behind
+      # it are both gone.
       # Everything Traefik already routes keeps its existing Ingress object.
-      - hostname: ash4d.com
-        service: http://traefik.kube-system.svc.cluster.local:80
-      - hostname: www.ash4d.com
-        service: http://traefik.kube-system.svc.cluster.local:80
       - hostname: buzz.ash4d.com
         service: http://traefik.kube-system.svc.cluster.local:80
       # Ollama has no Ingress — straight to its LoadBalancer VIP.
