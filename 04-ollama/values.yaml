@@ -64,6 +64,14 @@ extraEnv:
   value: "1"
 - name: OLLAMA_KV_CACHE_TYPE
   value: f16
+# 0.32.8-rc0 ON PURPOSE, 2026-08-11: chart 1.73.0 declares appVersion 0.32.8,
+# but upstream published only the -rc0 and -rocm tags — plain 0.32.8 does not
+# exist on Docker Hub, so the chart default is NotFound and the pod cannot
+# start. v0.32.9 is released on GitHub with no Docker image yet either. Move
+# this pin to 0.32.9 (or drop it) once docker.io/ollama/ollama publishes a
+# final tag.
+image:
+  tag: 0.32.8-rc0
 ollama:
   gpu:
     # false ON PURPOSE, and this is what the cluster actually runs. Setting it
