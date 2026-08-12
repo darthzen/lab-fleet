@@ -1,0 +1,25 @@
+I want to setup a service in fleet to deploy the openai client tunnel. My api key is stored in 1password
+
+---
+
+Check to see if the mempalace mcp is available for you
+
+---
+
+Tryh it now
+
+---
+
+It's in 1password now. Lab Memory, mempalace-mcp-token
+
+---
+
+tunnel id is tunnel_6a7cd3bedb408191ae74a75de3f0f66d
+
+---
+
+Follow the standard for ChatGPT - Hermes that you did with Claude, Buzz, etc. It should be named ChatGPT with a "hermes-lab" field whose text is the key in credential.
+
+---
+
+You already did Buzz. Don't touch it except to read.

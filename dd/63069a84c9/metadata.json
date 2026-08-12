@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "dd63069a84c9",
+  "strategy": "manual-commit",
+  "branch": "openai-tunnel-bundle",
+  "checkpoints_count": 6,
+  "files_touched": [
+    "14-cluster-mgmt/gitrepos/lab-openai-tunnel.yaml",
+    "24-openai-tunnel/fleet.yaml",
+    "24-openai-tunnel/tunnel-client.deployment.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/dd/63069a84c9/0/metadata.json",
+      "transcript": "/dd/63069a84c9/0/full.jsonl",
+      "compact_transcript": "/dd/63069a84c9/0/transcript.jsonl",
+      "content_hash": "/dd/63069a84c9/0/content_hash.txt",
+      "prompt": "/dd/63069a84c9/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1847,
+    "cache_creation_tokens": 149843,
+    "cache_read_tokens": 7374875,
+    "output_tokens": 46672,
+    "api_call_count": 66
+  }
+}
