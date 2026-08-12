@@ -23,3 +23,7 @@ Follow the standard for ChatGPT - Hermes that you did with Claude, Buzz, etc. It
 ---
 
 You already did Buzz. Don't touch it except to read.
+
+---
+
+go
