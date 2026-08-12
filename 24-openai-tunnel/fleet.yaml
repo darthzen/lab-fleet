@@ -1,0 +1,34 @@
+# Fleet bundle — OpenAI tunnel-client (github.com/openai/tunnel-client).
+#
+# Connects a private MCP server to ChatGPT / Codex / the Responses API through
+# an OpenAI-hosted tunnel endpoint. The client long-polls the OpenAI control
+# plane over outbound HTTPS and forwards JSON-RPC to the MCP server — no
+# inbound ports, no cloudflared companion needed (the managed-cloudflared mode
+# in the image is for exposing a *local* server; our target is already
+# routable).
+#
+# MCP target: https://mempalace.ash4d.com/mcp — the mempalace MCP server
+# (v3.6.0, 22 read-only tools). Verified live 2026-08-12: Streamable HTTP at
+# /mcp, Bearer auth, no session header. The hostname resolves to the internal
+# Traefik VIP (192.168.7.150), so the tunnel-client pod reaches it in-cluster.
+#
+# Egress required: api.openai.com:443 (and mempalace.ash4d.com:443).
+#
+# MANUAL PREREQUISITE — Secret `tunnel-client-credentials` must exist in this
+# namespace before the Deployment can start. Canonical copies live in
+# 1Password (Private vault): item "ChatGPT" (fields hermes-lab, tunnel id)
+# and item "Lab Memory" (field mempalace-mcp-token). Seed with:
+#
+#   kubectl --context sdf1 -n openai-tunnel create secret generic tunnel-client-credentials \
+#     --from-literal=CONTROL_PLANE_API_KEY="$(op read 'op://Private/ChatGPT/hermes-lab')" \
+#     --from-literal=CONTROL_PLANE_TUNNEL_ID="$(op read 'op://Private/ChatGPT/tunnel id')" \
+#     --from-literal=MEMPALACE_MCP_TOKEN="$(op read 'op://Private/Lab Memory/mempalace-mcp-token')"
+#
+# The mempalace token is the Bearer token the client presents to the MCP
+# server via MCP_EXTRA_HEADERS. Deliberately NOT in OpenBao for the same reason as
+# cloudflared-credentials (23-cloudflare-tunnel/fleet.yaml): openbao-0 runs
+# `server -dev` (in-memory), so a pod restart would wipe it.
+#
+# Image is ghcr.io/openai/tunnel-client, not a BCI wrapper — vendor-maintained
+# upstream image, used directly per the container policy in infra.md.
+defaultNamespace: openai-tunnel

@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tunnel-client
+  namespace: openai-tunnel
+spec:
+  # ONE replica, deliberately. Upstream docs: multiple replicas are only safe
+  # when the MCP backend handles active-active traffic — each message is
+  # delivered to whichever replica polls first. mempalace has not been
+  # verified active-active, so keep one client per tunnel until it is.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tunnel-client
+  template:
+    metadata:
+      labels:
+        app: tunnel-client
+    spec:
+      containers:
+        - name: tunnel-client
+          image: ghcr.io/openai/tunnel-client:v0.0.11
+          env:
+            # Both from the manually seeded Secret — see fleet.yaml header.
+            - name: CONTROL_PLANE_TUNNEL_ID
+              valueFrom:
+                secretKeyRef:
+                  name: tunnel-client-credentials
+                  key: CONTROL_PLANE_TUNNEL_ID
+            - name: CONTROL_PLANE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: tunnel-client-credentials
+                  key: CONTROL_PLANE_API_KEY
+            # Endpoint verified live 2026-08-12: MCP mounts at /mcp (bare host
+            # 404s), Streamable HTTP, no session header required.
+            - name: MCP_SERVER_URL
+              value: "https://mempalace.ash4d.com/mcp"
+            # mempalace requires `Authorization: Bearer <token>`. The raw
+            # token comes from the Secret; $(VAR) is Kubernetes dependent env
+            # expansion (so MEMPALACE_MCP_TOKEN must stay defined ABOVE this
+            # entry), and env: is tunnel-client's own substitution syntax.
+            # MCP_EXTRA_HEADERS goes only to the MCP origin, never to the
+            # OpenAI control plane.
+            - name: MEMPALACE_MCP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: tunnel-client-credentials
+                  key: MEMPALACE_MCP_TOKEN
+            - name: MCP_AUTH_HEADER
+              value: "Bearer $(MEMPALACE_MCP_TOKEN)"
+            - name: MCP_EXTRA_HEADERS
+              value: "Authorization: env:MCP_AUTH_HEADER"
+            - name: HEALTH_LISTEN_ADDR
+              value: ":8080"
+          ports:
+            - name: health
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
