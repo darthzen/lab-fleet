@@ -71,7 +71,7 @@ extraEnv:
 # this pin to 0.32.9 (or drop it) once docker.io/ollama/ollama publishes a
 # final tag.
 image:
-  tag: 0.32.8-rc0
+  tag: 0.32.14-rc0
 ollama:
   gpu:
     # false ON PURPOSE, and this is what the cluster actually runs. Setting it
