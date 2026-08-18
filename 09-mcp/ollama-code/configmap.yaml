@@ -18,7 +18,9 @@ data:
   # Must be a tag that exists on the server — see 04-ollama/values.yaml
   # models.create. The previous value (qwen3-coder:30b) was deleted on
   # 2026-07-30 and every call through this server failed model-not-found.
-  OLLAMA_MODEL: "qwen3.6:27b-q6-precise"
+  # Swapped from qwen3.6:27b-q6-precise on 2026-08-18 as part of the fleet-wide
+  # move to qwen3.8.
+  OLLAMA_MODEL: "qwen3.8:27b-mtp-q8-precise"
   OLLAMA_TIMEOUT: "900"
   # Matches OLLAMA_CONTEXT_LENGTH on the server (96k x 1 slot, f16 KV —
   # sizing rationale in 04-ollama/values.yaml). A smaller per-request value
