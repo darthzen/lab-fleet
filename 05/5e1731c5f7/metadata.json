@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "055e1731c5f7",
+  "strategy": "manual-commit",
+  "branch": "qwen38-default-model",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "04-ollama/README.md",
+    "04-ollama/values.yaml",
+    "09-mcp/ollama-code/configmap.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/05/5e1731c5f7/0/metadata.json",
+      "transcript": "/05/5e1731c5f7/0/full.jsonl",
+      "compact_transcript": "/05/5e1731c5f7/0/transcript.jsonl",
+      "content_hash": "/05/5e1731c5f7/0/content_hash.txt",
+      "prompt": "/05/5e1731c5f7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 78,
+    "cache_creation_tokens": 134738,
+    "cache_read_tokens": 3701699,
+    "output_tokens": 31029,
+    "api_call_count": 39
+  }
+}

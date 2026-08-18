@@ -1,0 +1,1 @@
+Sort out the git branches locally and up on github, then I want to update the hermes agent anbd webui to use qwen3.8:27b-mtp-q8_0 as their default model instead of the previous qwen3.6:27b. Also, identify any other services that are using 3.6 as their model and swap them to the 3.8.
