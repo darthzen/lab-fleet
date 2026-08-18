@@ -1,0 +1,9 @@
+Read the handoff and let's finish off this tunnel. The test will be if I can get mempalace working on with my cloud chatgpt server
+
+---
+
+Tear down and remove the tunnel. OpenAI won't let me use it without a business account. Score one for Claude.
+
+---
+
+What's the json i need to adapt the claude desktop to use the mempalace mcp at the new url?
