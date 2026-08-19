@@ -20,27 +20,41 @@ ownerPubkey: "94005a8c7fd13215b1191163c0990d406aa50886893819015aa03fd35ac0a075"
 
 replicaCount: 1
 
-# UPSTREAM MISMATCH: chart 0.1.6 (newest published) pins appVersion 0.1.0, but
-# the ghcr.io/block/buzz:0.1.0 image ships only the buzz-relay binary — no
-# buzz-admin, no migrations. It ignores BUZZ_AUTO_MIGRATE, so the schema is
-# never created and the relay dies on: relation "events" does not exist.
-# The app is at 0.5.0; only :main satisfies this chart. Pinned by digest below.
+# UPSTREAM MISMATCH: chart 0.1.7 (newest published) still pins appVersion
+# 0.1.0, but the ghcr.io/block/buzz:0.1.0 image ships only the buzz-relay
+# binary — no buzz-admin, no migrations. It ignores BUZZ_AUTO_MIGRATE, so the
+# schema is never created and the relay dies on: relation "events" does not
+# exist. Upstream now versions the relay separately (relay-v* git tags;
+# latest relay-v0.2.1, tagged 2026-08-08) but publishes NO versioned relay
+# images — only :main and :latest, rebuilt continuously; the old per-commit
+# sha-* image tags stopped before relay-v0.2.1. So only :main satisfies this
+# chart. Pinned by digest below.
 #
 # The chart's image helper is printf "%s:%s" repository tag, so splitting the
 # digest across the two fields is what produces a valid repo@sha256:... ref.
 # To re-pin: crane digest ghcr.io/block/buzz:main   (or the curl in secret.md)
 #
-# SECURITY re-pin 2026-07-28: the previous digest (650b10af, rev 63c62fcf,
-# built 07-27 02:17Z) predated the nostr 0.44.6 bump for RUSTSEC-2026-0216
-# (NIP-44 remote DoS, block/buzz#3135, merged 07-27 16:04Z) — that bump is in
-# the ROOT Cargo.lock, which is the workspace containing crates/buzz-relay, so
-# it is a relay fix, not just a desktop one. requireRelayMembership is not a
-# shield: buzz.ash4d.com is internet-reachable through the GCP proxy. Current
-# pin is rev 4a977c58 (built 07-28 14:34Z), which contains #3135. Do not roll
-# back below that revision.
+# SECURITY re-pin 2026-07-28 (superseded, kept for the floor chain): digest
+# 98b68d40, rev 4a977c58 (= tag v0.5.0, built 07-28 14:34Z), first build with
+# the nostr 0.44.6 bump for RUSTSEC-2026-0216 (NIP-44 remote DoS,
+# block/buzz#3135). That bump is in the ROOT Cargo.lock, the workspace
+# containing crates/buzz-relay, so it is a relay fix, not just a desktop one.
+# requireRelayMembership is not a shield: buzz.ash4d.com is
+# internet-reachable through the GCP proxy.
+#
+# SECURITY re-pin 2026-08-18: current pin is rev 93114c9c (main tip, built
+# 08-18 23:16Z; revision verified from the image config label). It contains
+# everything in relay-v0.2.1 plus main through 08-18, including:
+#   - RUSTSEC-2026-0224 nostr-relay-pool bump (#4139)
+#   - RUSTSEC-2026-0225..0232 nostr crate bumps (#4392)
+#   - media reads now REQUIRE AUTHENTICATION (#4610) — previously
+#     unauthenticated, and the media endpoint is internet-reachable
+#   - git access revoked for banned relay members (#4608); workflow trigger
+#     author bound to the signed event (#4607)
+# This pin is the new floor. Do not roll back below rev 93114c9c.
 image:
   repository: ghcr.io/block/buzz@sha256
-  tag: "98b68d4094e452a962a513d37d54d3533bfd9d08265abcc02b1dc1784c51b743"
+  tag: "b9d56ac6a2aad8dd48c0c6890af36646e209b735a6e90a773de072a17b50e5c6"
 
 # Pre-created out-of-band; see secret.md.
 #
@@ -149,6 +163,18 @@ persistence:
 git:
   # Chart default is 500 MiB. Fine here — LAN-only, nothing traverses the
   # Cloudflare edge, so the 100 MB proxied-request-body limit does not apply.
+  #
+  # KNOWN-INERT ENV, upstream chart bug: Helm coerces YAML numbers to float64
+  # and the chart templates this with | quote, so 524288000 renders as
+  # BUZZ_GIT_MAX_PACK_BYTES="5.24288e+08". The relay reads it with u64
+  # .parse(), which fails on scientific notation and SILENTLY falls back to
+  # its compiled default of 500*1024*1024 = 524288000 — the same value, so
+  # the outcome is correct by coincidence. The chart's values.schema.json
+  # rejects strings ("got string, want integer"), so quoting is not a
+  # workaround. Same applies to chart 0.1.7's new git.packCacheMaxBytes
+  # (renders "5.36870912e+09"; relay falls back to ~4.9 GB, under the 7Gi
+  # emptyDir either way — not overridden here). Any CUSTOM value for these
+  # knobs would be a no-op until the chart is fixed upstream.
   maxPackBytes: 524288000
 
 migrate:
