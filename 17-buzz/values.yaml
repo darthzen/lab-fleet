@@ -180,6 +180,46 @@ git:
 migrate:
   autoMigrate: true
 
+# ── Device pairing (NIP-AB) ─────────────────────────────────────────────────
+# The relay binary does NOT serve the legacy same-host /pair WebSocket — that
+# path 404s. Clients (desktop 0.5.x, iOS) resolve the pairing route from
+# NIP-11: pairing_relay_url if advertised, else the /pair fallback (because
+# supported_nips contains 43), which is what produced the pairing-QR 404.
+# Enabling this runs the stateless buzz-pair-relay Deployment (same image,
+# separate binary) + Service buzz-pairing:5000, and the main relay advertises
+# the URL below in NIP-11. The /pair path on the existing host is routed to
+# that Service by the Ingress in extraManifests — same hostname on purpose, so
+# the phone reaches it through the existing GCP proxy path with no edge
+# changes. The one-community-per-Host and NIP-98 warnings on the main ingress
+# do not apply here: the pairing relay is stateless and community-agnostic
+# (ephemeral keys, opaque ciphertext).
+pairingRelay:
+  enabled: true
+  url: wss://buzz.ash4d.com/pair
+
+# Companion Ingress for the pairing relay. Same host as the main ingress with
+# a more specific path — Traefik routes /pair here, everything else to the
+# relay. Deliberately NO tls block and NO cert-manager annotation: TLS for
+# buzz.ash4d.com terminates at the GCP edge (see the main ingress comments).
+extraManifests:
+  - apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: buzz-pairing
+    spec:
+      ingressClassName: traefik
+      rules:
+        - host: buzz.ash4d.com
+          http:
+            paths:
+              - path: /pair
+                pathType: Prefix
+                backend:
+                  service:
+                    name: buzz-pairing
+                    port:
+                      number: 5000
+
 # Rancher monitoring is present; flip on once the relay is healthy.
 serviceMonitor:
   enabled: false
