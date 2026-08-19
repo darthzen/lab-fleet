@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "4284ca61a4f5",
+  "strategy": "manual-commit",
+  "branch": "buzz-pairing-relay",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "17-buzz/values.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/42/84ca61a4f5/0/metadata.json",
+      "transcript": "/42/84ca61a4f5/0/full.jsonl",
+      "compact_transcript": "/42/84ca61a4f5/0/transcript.jsonl",
+      "content_hash": "/42/84ca61a4f5/0/content_hash.txt",
+      "prompt": "/42/84ca61a4f5/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 229962,
+    "cache_read_tokens": 2450022,
+    "output_tokens": 8256,
+    "api_call_count": 12
+  }
+}

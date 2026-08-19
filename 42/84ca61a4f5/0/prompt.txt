@@ -1,0 +1,1 @@
+I get a 404 error when I try to display the QR code to pair my phone

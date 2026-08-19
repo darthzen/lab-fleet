@@ -1,0 +1,89 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "4284ca61a4f5",
+  "session_id": "680d20f0-7752-4ec3-b856-a58f30769192",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-19T02:52:18.174778Z",
+  "branch": "buzz-pairing-relay",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "17-buzz/values.yaml"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5",
+  "turn_id": "18a462b16264",
+  "checkpoint_transcript_start": 667,
+  "transcript_lines_at_start": 667,
+  "compact_transcript_start": 123,
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 229962,
+    "cache_read_tokens": 2450022,
+    "output_tokens": 8256,
+    "api_call_count": 12
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01Dv4xZc3KnRU3H4Fsbfscom",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "rick-preferences"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "18a462b16264",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 27,
+        "end": 28,
+        "entry_ids": [
+          "ed6cbef3-29fb-43ff-a736-1e519c7141aa"
+        ],
+        "tool_use_id": "toolu_01Dv4xZc3KnRU3H4Fsbfscom"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Dv4xZc3KnRU3H4Fsbfscom"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: rick-preferences",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-19T02:52:18.115264Z",
+    "agent_lines": 40,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 40,
+    "total_lines_changed": 40,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 362,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "06-milvus/lan/fleet.yaml": 4,
+        "06-milvus/lan/milvus-lan.yaml": 18,
+        "18-lab-memory/raw/mempalace-mcp.yaml": 126,
+        "18-lab-memory/raw/mnemosyne.yaml": 214
+      }
+    }
+  ]
+}
