@@ -1,0 +1,5 @@
+Go to ~/Developer/lab-fleet and find the deployment for buzz. What version is buzz currently deployed on and what’s the upstream latest version at? What are the relevant feature upgrades?
+
+---
+
+Let’s switch to the relay chart and do the upgrade. They have an iOS app now and I want to be able to use the two together.

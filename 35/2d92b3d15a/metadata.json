@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "352d92b3d15a",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "17-buzz/fleet.yaml",
+    "17-buzz/values.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/35/2d92b3d15a/0/metadata.json",
+      "transcript": "/35/2d92b3d15a/0/full.jsonl",
+      "compact_transcript": "/35/2d92b3d15a/0/transcript.jsonl",
+      "content_hash": "/35/2d92b3d15a/0/content_hash.txt",
+      "prompt": "/35/2d92b3d15a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 70,
+    "cache_creation_tokens": 133041,
+    "cache_read_tokens": 3268917,
+    "output_tokens": 36466,
+    "api_call_count": 35
+  }
+}
