@@ -3,8 +3,12 @@
 # Nostr-based messaging relay at buzz.ash4d.com: one relay binary serving
 # WebSocket + REST + web UI, backed by bundled PostgreSQL and Redis subcharts.
 #
-# Chart pinned to 0.1.6, matching the running release, so Fleet adopts rather
-# than upgrades. Verified: renders byte-identical to live.
+# Chart pinned to 0.1.7 (upgraded from 0.1.6 on 2026-08-18). 0.1.7's only
+# change is generic extension points on the relay Pod (init-containers,
+# volumes, volumeMounts, command/args) — unused here, no values changes.
+# Chart.lock is identical between 0.1.6 and 0.1.7, so the Postgres and Redis
+# subcharts do not roll. The original 0.1.6 pin matched the pre-Fleet running
+# release so Fleet adopted rather than upgraded.
 #
 # The chart lives at oci://ghcr.io/block/buzz/charts/buzz — note the `/charts/`
 # path segment. This bundle briefly vendored a copy of the chart recovered from
@@ -40,9 +44,10 @@
 #
 # The image is pinned by digest, split across image.repository and image.tag
 # because the chart's helper does printf "%s:%s". The current pin is a
-# SECURITY floor, not just a version choice: it is the first build containing
-# the nostr 0.44.6 bump for RUSTSEC-2026-0216 (NIP-44 remote DoS). Do not roll
-# back below it — see the comments in values.yaml.
+# SECURITY floor, not just a version choice: it contains relay-v0.2.1's
+# RUSTSEC bumps (2026-0224, 2026-0225..0232) and authenticated media reads
+# (block/buzz#4610), on top of the earlier RUSTSEC-2026-0216 floor. Do not
+# roll back below it — see the comments in values.yaml.
 #
 # NOT vendored from the buzz-relay repo: gcp-proxy.yaml and gcp-ollama.yaml.
 # Those are applied to a DIFFERENT cluster (the GCP k3s instance), not this
@@ -51,7 +56,7 @@ defaultNamespace: buzz
 helm:
   releaseName: buzz
   chart: oci://ghcr.io/block/buzz/charts/buzz
-  version: "0.1.6"
+  version: "0.1.7"
   valuesFiles:
     - values.yaml
   takeOwnership: true
