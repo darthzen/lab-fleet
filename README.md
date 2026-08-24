@@ -45,7 +45,7 @@ flowchart TD
         CERTMGR[15 cert-manager<br/>letsencrypt-dns DNS-01]
     end
 
-    subgraph more["16-22 — Applications"]
+    subgraph more["16-25 — Applications"]
         ORIGIN[16 ash4d.com origin]
         BUZZ[17 Buzz relay<br/>+ MinIO]
         MEMORY[18 lab-memory<br/>Karakeep + MCP]
@@ -53,6 +53,9 @@ flowchart TD
         OPENSHELL[20 OpenShell<br/>agent gateway]
         UNSLOTH[21 Unsloth Studio<br/>fine-tuning GUI / V100]
         CHOREO[22 OpenChoreo IDP<br/>4 planes · 20 bundles]
+        CFTUNNEL[23 Cloudflare tunnel]
+        OAITUNNEL[24 OpenAI tunnel-client]
+        FIRECRAWL[25 Firecrawl<br/>crawl / scrape API]
     end
 
     host --> platform --> ai --> apps
@@ -103,6 +106,9 @@ flowchart TD
 | 20 | OpenShell agent gateway | **vendored** chart `helm-chart` | 0.0.0-dev |
 | 21 | Unsloth Studio (fine-tuning GUI) — scaled to 0 | unsloth/unsloth | 2026.5.9 (studio v0.1.43-beta) |
 | 22 | OpenChoreo IDP (4 planes + kgateway/ESO/OpenBao/Thunder) | ghcr.io/openchoreo/helm-charts | 1.2.1 |
+| 23 | Cloudflare tunnel (cloudflared) | raw manifests | cloudflare/cloudflared:2026.7.3 |
+| 24 | OpenAI tunnel-client → mempalace MCP | raw manifests | tunnel-client v0.0.11 |
+| 25 | Firecrawl self-hosted crawl/scrape API | raw manifests (upstream k8s example, adapted) | 2.11.227 |
 
 ### Directory numbers 15+ are append-order, not install-order
 
@@ -116,7 +122,7 @@ path and every cross-reference in the docs, for a cosmetic gain.
 
 Real dependency order for the new components:
 
-    15-cert-manager  →  16, 17, 18, 21, 22  (anything terminating TLS in-cluster)
+    15-cert-manager  →  16, 17, 18, 21, 22, 25  (anything terminating TLS in-cluster)
     19-nemoclaw      →  20-openshell (openshell writes into nemoclaw-sandboxes)
 
 `22-openchoreo` is a whole platform rather than an application: 20 Fleet paths

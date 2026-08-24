@@ -1,0 +1,86 @@
+# NuQ worker — pulls scrape jobs off the Postgres-backed NuQ queue. This is
+# where the actual scraping work happens.
+#
+# ONE REPLICA, not upstream's five. Five would ask for 15Gi of memory requests
+# on a node whose other 109 pods already request ~18.4Gi, and the crawl volume
+# this lab generates does not need them. This is the knob to turn if crawls
+# queue up:  kubectl -n firecrawl scale deploy/nuq-worker --replicas=2
+# (and then put the number in this file, because correctDrift is on and Fleet
+# will scale it back).
+#
+# No Service: nothing calls it. Port 3006 is probe-and-metrics only.
+# NUQ_WORKER_PORT is what the code reads (apps/api/src/services/worker/
+# nuq-worker-runner.ts) and its default is 3000, so this must be set explicitly
+# to match the probe.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nuq-worker
+  labels:
+    app: nuq-worker
+    app.kubernetes.io/part-of: firecrawl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nuq-worker
+  template:
+    metadata:
+      labels:
+        app: nuq-worker
+        app.kubernetes.io/part-of: firecrawl
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: nuq-worker
+          image: ghcr.io/firecrawl/firecrawl:2.11.227
+          imagePullPolicy: IfNotPresent
+          command: ["node"]
+          args: ["--max-old-space-size=1536", "dist/src/services/worker/nuq-worker.js"]
+          ports:
+            - name: http
+              containerPort: 3006
+          env:
+            - name: FLY_PROCESS_GROUP
+              value: "nuq-worker"
+            - name: NUQ_WORKER_PORT
+              value: "3006"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: firecrawl-nuq-postgres
+                  key: POSTGRES_PASSWORD
+            - name: NUQ_DATABASE_URL
+              value: "postgresql://postgres:$(POSTGRES_PASSWORD)@nuq-postgres:5432/postgres"
+          envFrom:
+            - configMapRef:
+                name: firecrawl-config
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1500m
+              memory: 2Gi
+          # /health here runs a real queue health check against Postgres with a
+          # 1s internal timeout, so it fails closed if the database goes away.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

@@ -1,0 +1,125 @@
+# Playwright service — the headless Chromium that renders JS-heavy pages.
+#
+# The API POSTs to http://playwright-service:3000/scrape (see configmap.yaml —
+# the /scrape suffix is load-bearing and upstream's k8s example gets it wrong).
+#
+# NO /dev/shm VOLUME, and that is not an oversight. The usual Chromium-in-k8s
+# fix is an emptyDir with medium: Memory at /dev/shm, because the default 64Mi
+# crashes the renderer. This image does not need it: apps/playwright-service-ts/
+# api.ts launches chromium with --disable-dev-shm-usage, so it writes shared
+# memory to /tmp instead. Read from source at 2.11.227, not assumed.
+#
+# ALLOW_LOCAL_WEBHOOKS stays false. With it false, assertSafeTargetUrl() in
+# api.ts refuses any URL that resolves to a private IP — which means THIS
+# SERVICE CANNOT CRAWL ANYTHING ON 192.168.7.0/24 or any *.ash4d.com name that
+# resolves to the Traefik VIP. That is the correct default: it is also the only
+# thing stopping an unauthenticated LAN-exposed API from being used to read the
+# rest of the lab. Flip it only with a specific internal target in mind, and
+# know that flipping it turns this into a full SSRF primitive for anyone who
+# can reach the Ingress.
+#
+# IMAGE PINNED BY DIGEST — upstream publishes only :latest here, same as
+# nuq-postgres. Digest is `latest` as resolved 2026-08-24.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: playwright-service-config
+  labels:
+    app.kubernetes.io/part-of: firecrawl
+data:
+  # Required. The code defaults to 3003 (api.ts), while the Service and the
+  # API's PLAYWRIGHT_MICROSERVICE_URL both expect 3000.
+  PORT: "3000"
+  ALLOW_LOCAL_WEBHOOKS: "false"
+  # Bounds memory. Each concurrent page is a Chromium context; upstream's
+  # default is 10, which on a node already carrying 109 pods is a good way to
+  # find the OOM killer. Raise it if crawls queue behind each other and the pod
+  # is nowhere near its memory limit.
+  MAX_CONCURRENT_PAGES: "3"
+  # Skips images, audio and video. Firecrawl wants text; fetching media is
+  # bandwidth and browser memory spent on bytes that get discarded.
+  BLOCK_MEDIA: "true"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: playwright-service
+  labels:
+    app: playwright-service
+    app.kubernetes.io/part-of: firecrawl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: playwright-service
+  template:
+    metadata:
+      labels:
+        app: playwright-service
+        app.kubernetes.io/part-of: firecrawl
+    spec:
+      securityContext:
+        # The image's own USER is `node`, which is uid/gid 1000 in the node
+        # base images. Verified from the image config, so this matches rather
+        # than fights the container.
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: playwright-service
+          image: ghcr.io/firecrawl/playwright-service@sha256:468009bae00911d40d7120d58489a1d529362c22c45585cb9076094fe61b0025
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: playwright-service-config
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+          # /health launches a real browser context and closes it, so it is a
+          # genuine readiness signal — and correspondingly not free. Keep the
+          # period long. First launch downloads nothing (browsers are baked in)
+          # but still takes a few seconds.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: playwright-service
+  labels:
+    app.kubernetes.io/part-of: firecrawl
+spec:
+  selector:
+    app: playwright-service
+  ports:
+    - name: http
+      protocol: TCP
+      port: 3000
+      targetPort: http

@@ -1,0 +1,112 @@
+# Firecrawl API — the HTTP surface. /v2/scrape, /v2/crawl, /v2/map.
+#
+# `command: ["node"]` REPLACES the image's default CMD, which is
+# `node dist/src/harness.js --start-docker` — a dev-mode harness that shells out
+# to docker/podman to start its own Postgres and RabbitMQ. In a pod that has no
+# container runtime, it fails. Running dist/src/index.js directly is upstream's
+# own k8s path, and it needs no RabbitMQ: NUQ_RABBITMQ_URL is only consulted
+# when USE_DB_AUTHENTICATION is on. The image has no ENTRYPOINT of its own
+# beyond the node base image's docker-entrypoint.sh, so overriding command is
+# safe. Verified from the image config and apps/api/Dockerfile at 2.11.227.
+#
+# --max-old-space-size is set to roughly 2/3 of the memory limit, not to
+# upstream's 6144. V8 treats it as a soft ceiling and will grow the heap toward
+# it before collecting hard; setting it above the cgroup limit means the pod
+# gets OOMKilled instead of doing a GC. 2048 against a 3Gi limit leaves room
+# for the Go html-to-markdown shared library and Chromium-free native bits that
+# live outside the JS heap.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels:
+    app: api
+    app.kubernetes.io/part-of: firecrawl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+        app.kubernetes.io/part-of: firecrawl
+    spec:
+      # Crawls in flight get up to three minutes to finish on a rollout.
+      terminationGracePeriodSeconds: 180
+      containers:
+        - name: api
+          image: ghcr.io/firecrawl/firecrawl:2.11.227
+          imagePullPolicy: IfNotPresent
+          command: ["node"]
+          args: ["--max-old-space-size=2048", "dist/src/index.js"]
+          ports:
+            - name: http
+              containerPort: 3002
+          env:
+            - name: PORT
+              value: "3002"
+            # Upstream's images carry Fly.io process-group plumbing; the value
+            # selects which role this process plays. "app" is the API.
+            - name: FLY_PROCESS_GROUP
+              value: "app"
+            # POSTGRES_PASSWORD must be declared BEFORE NUQ_DATABASE_URL —
+            # Kubernetes dependent env expansion only resolves $(VAR) against
+            # entries already defined above it. Same pattern as
+            # 24-openai-tunnel's MCP_AUTH_HEADER.
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: firecrawl-nuq-postgres
+                  key: POSTGRES_PASSWORD
+            - name: NUQ_DATABASE_URL
+              value: "postgresql://postgres:$(POSTGRES_PASSWORD)@nuq-postgres:5432/postgres"
+          envFrom:
+            - configMapRef:
+                name: firecrawl-config
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 3Gi
+          # Route paths verified in apps/api/src/routes/v0.ts at 2.11.227 —
+          # the v1 router has them commented out, so v0 is the live one.
+          livenessProbe:
+            httpGet:
+              path: /v0/health/liveness
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /v0/health/readiness
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/part-of: firecrawl
+spec:
+  type: ClusterIP
+  selector:
+    app: api
+  ports:
+    - name: http
+      protocol: TCP
+      port: 3002
+      targetPort: http

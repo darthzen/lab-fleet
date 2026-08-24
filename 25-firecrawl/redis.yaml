@@ -1,0 +1,76 @@
+# Redis — rate-limit counters and short-lived scrape caches.
+#
+# No password, matching upstream's compose default. Upstream's k8s example
+# wraps redis-server in a shell that conditionally sets --requirepass from a
+# Secret key that their template ships empty; that branch is dead code in every
+# deployment that does not populate it, so it is dropped here in favour of the
+# plain command. Reachable only as a ClusterIP inside the `firecrawl`
+# namespace.
+#
+# No persistence, deliberately. Everything in here is a cache or a counter.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  labels:
+    app: redis
+    app.kubernetes.io/part-of: firecrawl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+        app.kubernetes.io/part-of: firecrawl
+    spec:
+      containers:
+        - name: redis
+          # Upstream's compose uses the floating redis:alpine. Pinned to a patch
+          # release here — 8.2 is the floating minor, 8.8.2 was current on
+          # 2026-08-24. Firecrawl uses only counters and string caches, so any
+          # recent Redis works; the pin is about reproducibility, not features.
+          image: redis:8.8.2-alpine
+          imagePullPolicy: IfNotPresent
+          args: ["redis-server", "--bind", "0.0.0.0", "--save", ""]
+          ports:
+            - name: redis
+              containerPort: 6379
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            tcpSocket:
+              port: redis
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: redis
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  labels:
+    app.kubernetes.io/part-of: firecrawl
+spec:
+  selector:
+    app: redis
+  ports:
+    - name: redis
+      protocol: TCP
+      port: 6379
+      targetPort: redis

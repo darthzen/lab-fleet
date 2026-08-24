@@ -1,0 +1,54 @@
+# Traefik + cert-manager DNS-01 (letsencrypt-dns), mirroring 18-lab-memory/raw
+# and 09-mcp/ollama-code.
+#
+# REQUIRES firecrawl.ash4d.com -> 192.168.7.150 (the shared Traefik VIP) in DNS.
+# That record did not exist as of 2026-08-24 — create it before expecting this
+# to serve. cert-manager's DNS-01 challenge writes a _acme-challenge TXT record
+# and does not need the A record, so a missing A record shows up as "TLS is
+# fine, nothing connects" rather than as a certificate failure.
+#
+# The Certificate object is NOT declared here. cert-manager's ingress-shim
+# creates it from the cluster-issuer annotation below, the same way three of the
+# four certificates in lab-memory are created. Declaring it as well would put
+# two owners on one object.
+#
+# WHAT THIS EXPOSES: an unauthenticated crawl API, to the whole LAN. That is the
+# deliberate choice — hermes on the laptop needs to reach it, and Firecrawl's
+# self-host mode has no API-key check to turn on. Two consequences worth being
+# awake to:
+#
+#   - Anyone on 192.168.7.0/24 can queue crawls against lab CPU and lab egress.
+#   - This host must NOT be added to 23-cloudflare-tunnel. Public + unauthenticated
+#     + "fetch this URL for me" is an open SSRF proxy.
+#
+# To put basic auth in front of it instead, create a Traefik BasicAuth
+# middleware in this namespace and add the annotation
+# `traefik.ingress.kubernetes.io/router.middlewares: firecrawl-<name>@kubernetescrd`
+# below. That is not a drop-in for the clients: hermes' firecrawl provider hands
+# FIRECRAWL_API_KEY to the Firecrawl SDK, which puts it in an Authorization
+# header of its own choosing, so basic-auth credentials would have to reach
+# Traefik some other way. Work out the client side before adding the middleware.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: firecrawl
+  labels:
+    app.kubernetes.io/part-of: firecrawl
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-dns
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [firecrawl.ash4d.com]
+      secretName: firecrawl-ash4d-tls
+  rules:
+    - host: firecrawl.ash4d.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 3002
