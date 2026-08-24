@@ -1,0 +1,47 @@
+# Shared non-secret config for api, worker and nuq-worker.
+#
+# NUQ_DATABASE_URL is deliberately NOT here — it embeds the Postgres password,
+# so each Deployment builds it in its own env block from the
+# firecrawl-nuq-postgres Secret via $(VAR) dependent expansion. Same pattern as
+# 24-openai-tunnel's MCP_AUTH_HEADER.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: firecrawl-config
+  labels:
+    app.kubernetes.io/part-of: firecrawl
+data:
+  HOST: "0.0.0.0"
+
+  REDIS_URL: "redis://redis:6379"
+  REDIS_RATE_LIMIT_URL: "redis://redis:6379"
+
+  # MUST end in /scrape. The API POSTs to this value verbatim — it appends no
+  # path. Upstream's k8s example omits /scrape (their compose file has it);
+  # with the bare host every scrape 404s at the playwright service and falls
+  # back to plain fetch, which means no JS rendering and no obvious error.
+  # Verified against apps/api/src/scraper/scrapeURL/engines/playwright/index.ts
+  # at 2.11.227.
+  PLAYWRIGHT_MICROSERVICE_URL: "http://playwright-service:3000/scrape"
+
+  # The only supported self-host mode. There is no API-key check in front of
+  # this deployment; see fleet.yaml.
+  USE_DB_AUTHENTICATION: "false"
+
+  ENV: "production"
+  LOGGING_LEVEL: "INFO"
+
+  # Makes system-monitor read the cgroup memory limit instead of the host's
+  # /proc/meminfo (apps/api/src/services/system-monitor.ts). Without it the API
+  # believes it has all 64Gi of sdf1 and will happily queue past its own limit.
+  IS_KUBERNETES: "true"
+
+  # AI-backed features (json format, extract, LLM-assisted parsing) are OFF.
+  # To point them at the lab's own Ollama rather than OpenAI, uncomment these —
+  # ollama-exporter is the metered in-cluster proxy that 18-lab-memory and
+  # 09-mcp/ollama-code already use, so calls land in the same accounting.
+  # The model must be a tag that exists on the server (04-ollama/values.yaml
+  # models.create), or every AI call fails model-not-found.
+  #
+  # OLLAMA_BASE_URL: "http://ollama-exporter.ai.svc.cluster.local:9401"
+  # MODEL_NAME: "qwen3.6:27b-q6-precise"

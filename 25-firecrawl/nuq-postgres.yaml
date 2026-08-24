@@ -1,0 +1,99 @@
+# NuQ Postgres — Firecrawl's job queue backend.
+#
+# This is NOT a general Postgres: ghcr.io/firecrawl/nuq-postgres is upstream's
+# own image, built with the pg_cron configuration the queue expects. Substituting
+# a stock postgres image does not work.
+#
+# NO PERSISTENCE, deliberately (upstream's example does the same). The volume
+# holds queue state — jobs in flight — not crawl results. Losing it on pod
+# replacement drops whatever was mid-crawl and nothing else, which is not worth
+# a Longhorn replica set on the array. If that judgement ever changes, swap the
+# emptyDir for a 10Gi longhorn PVC; nothing else here needs to change.
+#
+# IMAGE PINNED BY DIGEST. Upstream publishes only :latest for this image — there
+# is no semver tag to pin to. The digest below is `latest` as resolved on
+# 2026-08-24. It will go stale; README.md has the one-liner to re-resolve it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nuq-postgres
+  labels:
+    app: nuq-postgres
+    app.kubernetes.io/part-of: firecrawl
+spec:
+  replicas: 1
+  strategy:
+    # Recreate, not RollingUpdate: two Postgres pods would both try to init the
+    # queue schema, and with an emptyDir they do not even share a data dir.
+    type: Recreate
+  selector:
+    matchLabels:
+      app: nuq-postgres
+  template:
+    metadata:
+      labels:
+        app: nuq-postgres
+        app.kubernetes.io/part-of: firecrawl
+    spec:
+      containers:
+        - name: nuq-postgres
+          image: ghcr.io/firecrawl/nuq-postgres@sha256:aed86f62858f29bd971abddcdeb301c12888098d2cf5d33c1ba42b053bc460f6
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_DB
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: firecrawl-nuq-postgres
+                  key: POSTGRES_PASSWORD
+            # PGDATA one level down from the mount. The image runs initdb on an
+            # empty data dir; a bare mountpoint is fine for emptyDir today, but
+            # this keeps the manifest correct if the volume is ever swapped for
+            # a PVC whose filesystem arrives with a lost+found in it.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "postgres"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "postgres"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+      volumes:
+        - name: postgres-storage
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nuq-postgres
+  labels:
+    app.kubernetes.io/part-of: firecrawl
+spec:
+  type: ClusterIP
+  selector:
+    app: nuq-postgres
+  ports:
+    - name: postgres
+      protocol: TCP
+      port: 5432
+      targetPort: postgres

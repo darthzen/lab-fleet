@@ -1,0 +1,69 @@
+# Fleet GitRepo — firecrawl namespace.
+#
+# This is the Fleet `GitRepo` CUSTOM RESOURCE (gitrepos.fleet.cattle.io), not a
+# git repository: it points Fleet at the existing lab-fleet repo and tells it
+# which paths to render. It lives on the RANCHER CONTROLLER
+# (192.168.7.148, kubectl context `rancher`), so it is not part of any bundle here.
+#
+#   kubectl --context rancher apply -f 14-cluster-mgmt/gitrepos/lab-firecrawl.yaml
+#
+# One GitRepo per namespace — see gitrepos/README.md.
+#
+# FRESH INSTALL, NOT AN ADOPTION. Nothing named `firecrawl` runs on sdf1 today,
+# so the SSA field-ownership pre-flight in FLEET-WIRING.md does not apply —
+# there is no `helm` field manager to hand over from, and 25-firecrawl/fleet.yaml
+# correspondingly sets no `takeOwnership`. Six Deployments, one Ingress and four
+# Services come up the moment this lands. Same shape as lab-openai-tunnel and
+# 21-unsloth-studio, not like lab-lab-memory.
+#
+# SINGLE PATH, no nested children, so there is nothing to stage and the
+# one-unadopted-path rule is satisfied trivially. Applying this file is one step
+# and is idempotent afterwards.
+#
+# PREREQUISITES, both before applying this — details in 25-firecrawl/README.md:
+#   1. Secret `firecrawl-nuq-postgres` (key POSTGRES_PASSWORD) in the firecrawl
+#      namespace. Four Deployments read it; without it they sit in
+#      CreateContainerConfigError.
+#   2. DNS: firecrawl.ash4d.com -> 192.168.7.150 (shared Traefik VIP).
+#      Verified NXDOMAIN 2026-08-24.
+#
+# WHAT THIS PUTS ON THE LAN: an unauthenticated crawl API. Firecrawl's self-host
+# mode has no API-key check to turn on. Do not extend it onto the cloudflare
+# tunnel.
+#
+# 🔴 Do NOT roll back by removing the path once this has synced: for a bundle
+#    whose Helm release Fleet owns, that UNINSTALLS the release. Use
+#    spec.paused instead. This deleted karakeep on 2026-07-30 — see
+#    FLEET-WIRING.md.
+apiVersion: fleet.cattle.io/v1alpha1
+kind: GitRepo
+metadata:
+  name: lab-firecrawl
+  namespace: fleet-default
+spec:
+  repo: https://github.com/darthzen/lab-fleet
+  branch: main
+  # Explicit polling interval. Fleet's default is 15s, but this cluster's
+  # gitjob runs with `gitjob.syncPeriod: 2h` (a Rancher fleet-chart value), and
+  # on 2026-07-30 four GitRepos went dormant for 28+ minutes after a single
+  # transient `context deadline exceeded` against github.com -- they only
+  # recovered when an external write forced a reconcile. Stating the interval
+  # here bounds how stale a repo can get and makes the intent reviewable in git
+  # rather than depending on a controller-wide default. See FLEET-WIRING.md.
+  pollingInterval: 60s
+  paths:
+    - 25-firecrawl
+  # `ash4d-lab` is a bespoke label already on the sdf1 cluster (c-nnzn9). Chosen
+  # over management.cattle.io/cluster-name, which Rancher owns and may rewrite.
+  # Do NOT reuse site=ash4d — that belongs to the ash4d-site GitRepo and resolves
+  # to a different downstream cluster.
+  targets:
+    - clusterSelector:
+        matchLabels:
+          ash4d-lab: ""
+  # correctDrift ON, matching every other GitRepo here since 2026-07-30. Note
+  # what that means for this bundle specifically: scaling nuq-worker with
+  # `kubectl scale` will be reverted. Change replicas in 25-firecrawl/nuq-worker.yaml
+  # instead.
+  correctDrift:
+    enabled: true

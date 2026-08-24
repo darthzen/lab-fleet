@@ -1,0 +1,71 @@
+# Queue worker — the legacy BullMQ-side worker. Serves crawl orchestration and
+# the job types that have not moved to NuQ.
+#
+# No Service: nothing calls it. Port 3005 exists only for the liveness probe.
+# WORKER_PORT is what the code reads (apps/api/src/services/queue-worker.ts:
+# `config.WORKER_PORT || config.PORT`), and it defaults to 3005 already — set
+# explicitly so the probe port below is not depending on a default staying put.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  labels:
+    app: worker
+    app.kubernetes.io/part-of: firecrawl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+        app.kubernetes.io/part-of: firecrawl
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: worker
+          image: ghcr.io/firecrawl/firecrawl:2.11.227
+          imagePullPolicy: IfNotPresent
+          command: ["node"]
+          args: ["--max-old-space-size=1536", "dist/src/services/queue-worker.js"]
+          ports:
+            - name: http
+              containerPort: 3005
+          env:
+            - name: FLY_PROCESS_GROUP
+              value: "worker"
+            - name: WORKER_PORT
+              value: "3005"
+            - name: PORT
+              value: "3005"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: firecrawl-nuq-postgres
+                  key: POSTGRES_PASSWORD
+            - name: NUQ_DATABASE_URL
+              value: "postgresql://postgres:$(POSTGRES_PASSWORD)@nuq-postgres:5432/postgres"
+          envFrom:
+            - configMapRef:
+                name: firecrawl-config
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1500m
+              memory: 2Gi
+          livenessProbe:
+            httpGet:
+              path: /liveness
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

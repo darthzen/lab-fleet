@@ -1,0 +1,50 @@
+# Fleet bundle — Firecrawl self-hosted crawl/scrape API (raw manifests).
+#
+# Firecrawl turns a URL into LLM-ready markdown. Self-hosted here so crawls run
+# on lab hardware and lab egress rather than through firecrawl.dev, and so
+# hermes-agent (in-cluster) and hermes on Rick's laptop (over the LAN) share one
+# backend.
+#
+# THIS IS A FRESH INSTALL, NOT AN ADOPTION. Nothing named `firecrawl` exists on
+# sdf1 today, so there is no `helm` field manager to hand over from and no
+# takeOwnership needed — cf. 24-openai-tunnel, and unlike 18-lab-memory. Every
+# object here is created the moment the path lands in lab-firecrawl's
+# spec.paths. There is no staging gate; it all comes up at once.
+#
+# Adapted from upstream's examples/kubernetes/cluster-install at v2.11.227, with
+# four deliberate departures — each one is noted at its own manifest:
+#
+#   1. PLAYWRIGHT_MICROSERVICE_URL ends in /scrape. Upstream's k8s ConfigMap
+#      omits the path; their compose file includes it. The API POSTs to the
+#      value verbatim (apps/api/src/scraper/scrapeURL/engines/playwright/
+#      index.ts calls robustFetch with url: config.PLAYWRIGHT_MICROSERVICE_URL
+#      and appends nothing), so upstream's k8s value would POST to `/`, 404, and
+#      silently drop every scrape back to plain fetch. Read from source at
+#      2.11.227, not inferred.
+#   2. Images pinned. Upstream uses :latest everywhere. firecrawl pins to
+#      2.11.227; playwright-service and nuq-postgres publish ONLY :latest, so
+#      they pin by digest instead. See README.md for how to re-resolve them.
+#   3. Right-sized for a shared single node. Upstream asks for ~22Gi of memory
+#      requests and 5 nuq-worker replicas, which does not fit alongside the
+#      other 109 pods on sdf1. Arithmetic is in README.md.
+#   4. No Secret full of empty placeholders, and no imagePullSecrets. The
+#      upstream secret.yaml is nine empty keys for cloud features we do not
+#      use, and all three images are public on ghcr.io.
+#
+# MANUAL PREREQUISITES — both must exist before this path is enabled:
+#
+#   1. Secret `firecrawl-nuq-postgres` in this namespace, key POSTGRES_PASSWORD.
+#      Template in nuq-postgres.secret.example.yaml.txt. Without it, every one
+#      of the four Deployments that reference it stays in CreateContainerConfigError.
+#   2. DNS: firecrawl.ash4d.com -> 192.168.7.150 (the shared Traefik VIP).
+#      Verified NXDOMAIN on 2026-08-24 — it does not exist yet. Without it the
+#      Ingress renders fine, cert-manager's DNS-01 still issues (it writes a TXT
+#      record, it does not need an A record), but nothing can reach the host.
+#
+# THE API IS UNAUTHENTICATED. USE_DB_AUTHENTICATION=false is the only supported
+# self-host mode, and the Ingress puts it on the LAN. Anything on
+# 192.168.7.0/24 can drive it. It is NOT on the cloudflare tunnel and must not
+# be added to one — an open crawl API on the public internet is an SSRF proxy
+# for whoever finds it. See README.md for the Traefik basic-auth recipe if the
+# LAN exposure stops being acceptable.
+defaultNamespace: firecrawl
