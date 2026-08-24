@@ -1,0 +1,4 @@
+# Fleet bundle — Milvus LAN exposure (raw manifest, separate from the Helm
+# bundle one level up, same pattern as attu/). Gives the lab LAN a stable
+# gRPC endpoint for mempalace clients (Rick's Mac miner + MCP).
+defaultNamespace: ai

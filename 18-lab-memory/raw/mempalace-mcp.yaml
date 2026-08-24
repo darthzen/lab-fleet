@@ -1,0 +1,126 @@
+# MemPalace MCP server — read-write HTTP MCP over the shared Milvus palace.
+# Backend is Milvus in the ai namespace (corpus migrated 2026-08-12 from the
+# Mac's local Chroma). The palace *path* inside the container must be exactly
+# /Users/rashford/.mempalace/palace: the milvus backend derives the remote
+# collection name from sha256 of that path string, so any other path looks at
+# a different (empty) collection.
+#
+# Same interim pattern as lab-memory-mcp: BCI python + pip at start, pinned.
+# The PVC holds the non-vector palace files (embedder sidecar, milvus marker,
+# hallways.json, tunnels.json) plus the HF model cache; seeded by kubectl cp
+# from the Mac, refreshed manually until a sync job exists.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mempalace-state
+  namespace: lab-memory
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mempalace-mcp
+  namespace: lab-memory
+  labels:
+    app.kubernetes.io/name: mempalace-mcp
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mempalace-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mempalace-mcp
+    spec:
+      containers:
+        - name: mcp
+          image: registry.suse.com/bci/python:3.12
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              pip install --quiet 'mempalace[milvus]==3.6.0' &&
+              mkdir -p "/Users/rashford/.mempalace/palace" &&
+              exec mempalace-mcp --transport http --host 0.0.0.0 --port 8765 \
+                --palace "/Users/rashford/.mempalace/palace"
+          env:
+            - name: MEMPALACE_MCP_HTTP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: mempalace-mcp-token
+                  key: token
+            - name: MEMPALACE_BACKEND
+              value: milvus
+            - name: MEMPALACE_MILVUS_URI
+              value: http://milvus.ai.svc.cluster.local:19530
+            - name: HF_HOME
+              value: /Users/rashford/.mempalace/hf-cache
+          ports:
+            - containerPort: 8765
+              name: mcp
+          readinessProbe:
+            tcpSocket: {port: mcp}
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: {port: mcp}
+            initialDelaySeconds: 240
+            periodSeconds: 20
+          resources:
+            requests: {memory: 512Mi, cpu: 100m}
+            limits: {memory: 2Gi, cpu: "2"}
+          volumeMounts:
+            - name: state
+              mountPath: /Users/rashford/.mempalace
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: mempalace-state
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mempalace-mcp
+  namespace: lab-memory
+  labels:
+    app.kubernetes.io/name: mempalace-mcp
+spec:
+  ports:
+    - name: mcp
+      port: 8765
+      targetPort: 8765
+  selector:
+    app.kubernetes.io/name: mempalace-mcp
+---
+# mempalace.ash4d.com -> shared Traefik VIP 192.168.7.150 (wildcard DNS
+# already resolves). Same cert-manager DNS-01 pattern as lab-memory-mcp.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mempalace-mcp
+  namespace: lab-memory
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-dns
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [mempalace.ash4d.com]
+      secretName: mempalace-ash4d-tls
+  rules:
+    - host: mempalace.ash4d.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mempalace-mcp
+                port:
+                  number: 8765
