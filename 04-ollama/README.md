@@ -36,7 +36,12 @@ History:
 
 ## VRAM budget
 
-Primary model is `qwen3.6:27b` (27.8B dense, UD-Q6_K_XL, arch `qwen35` —
+Primary model is `qwen3.8:27b-mtp-q8_0` since 2026-08-18 (27.3B, Q8_0, arch
+`qwen35`, 29 GB weights — the Q8_0 weights are ~3 GB larger than the Q6 tag
+the sizing below was measured on, so 96k f16 KV is NOT expected to stay fully
+GPU-resident; that is a derivation, re-run the load test to confirm). The
+measurements in this section were taken on the previous primary,
+`qwen3.6:27b` (27.8B dense, UD-Q6_K_XL, arch `qwen35` —
 64 blocks, hybrid attention + state-space). KV cost **cannot be computed from
 GGUF metadata**: `qwen35.attention.head_count_kv` is null and the ratio of
 full-attention to state-space layers is not exposed. Ground truth comes from

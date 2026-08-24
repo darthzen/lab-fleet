@@ -86,17 +86,17 @@ ollama:
     pull:
     - llama3.1
     - nomic-embed-text
-    # Model-selection experiment candidates, 2026-07-30 (see README). Prune to
-    # the winner once the neuvector-mcp experiment decides.
-    #
     # These pulls run in the postStart hook and BLOCK pod readiness until every
     # missing model is downloaded. When adding a new large model: pull it
     # manually against the running server FIRST, then declare it here — the
     # postStart pull becomes a no-op manifest check and rollout stays fast.
     # (Learned 2026-07-30: declaring the un-pulled 26.6 GiB Q8_0 held the pod
     # in ContainerCreating for the whole throttled download.)
-    - hf.co/unsloth/Qwen3.6-27B-GGUF:UD-Q6_K_XL
-    - hf.co/unsloth/Qwen3.6-27B-GGUF:Q8_0
+    #
+    # qwen3.8:27b-mtp-q8_0 replaced the Qwen3.6-27B GGUF pulls on 2026-08-18
+    # (already pulled on the live server 2026-08-16, so the postStart pull is a
+    # no-op). The 3.6 GGUFs remain on the PVC until removed with `ollama rm`.
+    - qwen3.8:27b-mtp-q8_0
     - hf.co/unsloth/Devstral-Small-2-24B-Instruct-2512-GGUF:UD-Q6_K_XL
     # Coding tags with sampling pinned for precision. Stock sampling on the
     # upstream tags is tuned for chat, not code — qwen3.6:27b shipped
@@ -109,19 +109,14 @@ ollama:
     # Declared here (not created ad hoc on the server) so the tags are Fleet-
     # managed and survive a volume rebuild. Before 2026-07-30 they existed only
     # on the Longhorn PVC.
+    # qwen3.8 ships presence_penalty 0 (the 3.6 tags shipped 1.5, the leading
+    # suspect for the fossa-mcp hallucinations), but its stock temperature is
+    # 1.0 — still chat sampling. The precise tag keeps the coding profile.
+    # draft_num_predict (MTP speculation) is inherited from the parent.
     create:
-    - name: qwen3.6:27b-q8-precise
+    - name: qwen3.8:27b-mtp-q8-precise
       template: |
-        FROM hf.co/unsloth/Qwen3.6-27B-GGUF:Q8_0
-        PARAMETER temperature 0.15
-        PARAMETER top_p 0.9
-        PARAMETER top_k 20
-        PARAMETER repeat_penalty 1.0
-        PARAMETER presence_penalty 0
-        PARAMETER min_p 0
-    - name: qwen3.6:27b-q6-precise
-      template: |
-        FROM hf.co/unsloth/Qwen3.6-27B-GGUF:UD-Q6_K_XL
+        FROM qwen3.8:27b-mtp-q8_0
         PARAMETER temperature 0.15
         PARAMETER top_p 0.9
         PARAMETER top_k 20
