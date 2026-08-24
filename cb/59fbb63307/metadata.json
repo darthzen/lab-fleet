@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "cb59fbb63307",
+  "strategy": "manual-commit",
+  "branch": "lab-memory-mempalace-mnemosyne",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "06-milvus/lan/fleet.yaml",
+    "06-milvus/lan/milvus-lan.yaml",
+    "18-lab-memory/raw/mempalace-mcp.yaml",
+    "18-lab-memory/raw/mnemosyne.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/cb/59fbb63307/0/metadata.json",
+      "transcript": "/cb/59fbb63307/0/full.jsonl",
+      "compact_transcript": "/cb/59fbb63307/0/transcript.jsonl",
+      "content_hash": "/cb/59fbb63307/0/content_hash.txt",
+      "prompt": "/cb/59fbb63307/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 72035,
+    "cache_read_tokens": 691304,
+    "output_tokens": 8391,
+    "api_call_count": 12
+  }
+}
