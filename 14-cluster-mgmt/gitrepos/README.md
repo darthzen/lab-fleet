@@ -53,16 +53,13 @@ adopted, rolled back, or paused independently of every other.
 
 | GitRepo | Namespace | Paths | Risk |
 |---|---|---|---|
-| `lab-nemoclaw` | `nemoclaw` + `nemoclaw-sandboxes` | `19-nemoclaw` | **lowest — start here.** No pod templates at all |
 | `lab-node-red` | `node-red` | `12-node-red` | low |
 | `lab-emby` | `emby` | `11-emby` | low |
 | `lab-resilio` | `resilio` | `13-resilio` | low |
 | `lab-ash4d-origin` | `ash4d-origin` | `16-ash4d-origin` | low |
 | `lab-hermes` | `hermes` | `10-hermes` | low–med — needs `hermes-webui` Secret |
 | `lab-ai` | `ai` | 10 paths (04→09, 21) | med — **no `.yaml` file, staged by hand — see below** |
-| `lab-openshell` | `openshell` | `20-openshell` | med — **after `lab-nemoclaw`**; vendored chart |
 | `lab-buzz` | `buzz` | `17-buzz` (+ nested `17-buzz/minio`, comes automatically) | med — stateful; needs `buzz-relay` Secret |
-| `lab-lab-memory` | `lab-memory` | `18-lab-memory` (+ nested `/raw`) | **ADOPTED** 2026-07-30 after an SSA ownership handoff — zero pod restarts |
 | `lab-cloudflare-tunnel` | `cloudflare-tunnel` | `23-cloudflare-tunnel` | low for the cluster, **high stakes for the public site** — **fresh install, not an adoption**; needs `cloudflared-credentials` Secret |
 | `lab-openai-tunnel` | `openai-tunnel` | `24-openai-tunnel` | low — **fresh install, not an adoption**; one stateless pod; needs `tunnel-client-credentials` Secret |
 | `lab-firecrawl` | `firecrawl` | `25-firecrawl` | med — **fresh install, not an adoption**; needs `firecrawl-nuq-postgres` Secret + DNS |
@@ -71,60 +68,6 @@ adopted, rolled back, or paused independently of every other.
 | `lab-cattle-monitoring-system` | `cattle-monitoring-system` | `03-gpu/dcgm-exporter` | med |
 | `lab-cert-manager` | `cert-manager` | `15-cert-manager` (+ nested `/issuer`) | **ADOPTED** 2026-07-30 after an SSA ownership handoff — owns the 6 CRDs, never delete |
 | `lab-longhorn-system` | `longhorn-system` | `02-longhorn` | **highest — adopt last** |
-| `lab-openchoreo` | 7 namespaces | 20 paths under `22-openchoreo` | **fresh install, not an adoption** — one GitRepo per *product*, see below |
-
-## `lab-openchoreo` owns seven namespaces, on purpose
-
-It is the one exception to `lab-<namespace>`. OpenChoreo spans
-`openchoreo-control-plane`, `-data-plane`, `-workflow-plane`,
-`-observability-plane`, `thunder`, `openbao` and `external-secrets`, and those
-are not independently useful — the planes register with each other over mTLS
-and a data plane without a control plane is nothing. Seven GitRepos would mean
-seven knobs that must always move together.
-
-Two things make it unlike every other entry in the table:
-
-- **Nothing is being adopted.** No OpenChoreo release existed on the cluster
-  first, so the SSA field-ownership pre-flight in `FLEET-WIRING.md` does not
-  apply — there is no `helm` field manager to hand over from. Each path
-  *deploys* the moment it lands. What replaces the pre-flight is ordering, and
-  it is strict.
-- **One step Fleet cannot do.** The control plane's cluster-gateway CA has to
-  be copied into the other three plane namespaces by hand, because it does not
-  exist until the control plane has run. Skip it and three agent pods sit in
-  `ContainerCreating`.
-
-Its file, like `lab-ai`'s staging commands, holds **stage 1 only** —
-`22-openchoreo/external-secrets`. Widen with `kubectl patch`, one path at a
-time, in the order in `22-openchoreo/README.md`. **Do not re-apply
-`lab-openchoreo.yaml` after widening**: it resets `spec.paths` back to one
-entry, which is the same trap that restarted a failing loop on
-`lab-lab-memory` on 2026-07-30.
-
-`22-openchoreo` itself must never appear in `spec.paths` — a nested
-`fleet.yaml` deploys as soon as its parent does, so the parent path would
-deploy all twenty bundles at once.
-
-Adopt in that order. Within `lab-ai`, add paths one at a time — raw manifests
-(`08-indexer`, `09-mcp`, `07-comfyui`, `06-milvus/attu`,
-`04-ollama/ollama-exporter`, `09-mcp/ollama-code`) before the Helm charts
-(`04-ollama`, `05-open-webui`, `06-milvus`). `21-unsloth-studio` goes last —
-it is a **fresh install, not an adoption**, so Fleet deploys it the moment the
-path lands; its `unsloth-jupyter` Secret and DNS must exist first (see
-`21-unsloth-studio/README.md`).
-
-Two ordering constraints are hard, not preferences:
-
-- **`lab-nemoclaw` before `lab-openshell`.** The openshell chart renders a
-  ServiceAccount, Role, RoleBinding and NetworkPolicy *into* the
-  `nemoclaw-sandboxes` namespace, and `lab-nemoclaw` is what creates that
-  namespace. These two are not independently removable.
-- **`lab-cert-manager` late, and never deleted.** It owns the six cert-manager
-  CRDs, so deleting the GitRepo deletes every `Certificate`, `Issuer` and
-  `Order` object in the cluster. Roll back by removing the path.
-
-`lab-ash4d-origin`, `lab-nemoclaw` and `lab-openshell` hold a single path each,
-so there is nothing to stage for them.
 
 ## `lab-ai` deliberately has no `.yaml` file
 
