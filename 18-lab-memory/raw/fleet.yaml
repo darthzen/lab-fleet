@@ -1,12 +1,13 @@
-# Fleet bundle — lab-memory MCP servers, ingest CronJob, Certificate (raw).
+# Fleet bundle — SME MCP servers, ingest CronJob, Certificate (raw).
 #
 # Separate path from ../ because 18-lab-memory is a Helm bundle and Fleet
 # allows one chart per path.
 #
 # Contents:
-#   mcp-memory.*           — the lab-memory MCP server (mcp-memory.ash4d.com)
-#   sme-salesengineer.yaml — two more MCP servers in one file, each with its
-#                            own Service and Ingress
+#   sme-salesengineer.yaml — two MCP servers in one file, each with its own
+#                            Service and Ingress. Both mount the
+#                            lab-memory-mcp-src ConfigMap, which is created
+#                            out-of-band and is NOT part of this bundle.
 #   ingest-cronjob.yaml    — lab-memory-ingest
 #   karakeep-certificate.yaml — the karakeep-ash4d-tls Certificate. The other
 #                            three Certificates in this namespace are created
