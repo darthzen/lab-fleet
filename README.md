@@ -48,8 +48,6 @@ flowchart TD
     subgraph more["16-25 — Applications"]
         ORIGIN[16 ash4d.com origin]
         BUZZ[17 Buzz relay<br/>+ MinIO]
-        NEMO[19 NemoClaw<br/>RBAC · netpol]
-        OPENSHELL[20 OpenShell<br/>agent gateway]
         UNSLOTH[21 Unsloth Studio<br/>fine-tuning GUI / V100]
         CFTUNNEL[23 Cloudflare tunnel]
         FIRECRAWL[25 Firecrawl<br/>crawl / scrape API]
@@ -98,8 +96,6 @@ flowchart TD
 | 15 | cert-manager + `letsencrypt-dns` ClusterIssuer | jetstack/cert-manager | v1.20.2 |
 | 16 | ash4d.com origin (nginx placeholder) | raw manifests | nginx-unprivileged:alpine |
 | 17 | Buzz relay (+ standalone MinIO) | oci://ghcr.io/block/buzz/charts/buzz | 0.1.6 (app 0.1.0) |
-| 19 | NemoClaw ops-agent scaffolding (RBAC/netpol) | raw manifests | — |
-| 20 | OpenShell agent gateway | **vendored** chart `helm-chart` | 0.0.0-dev |
 | 21 | Unsloth Studio (fine-tuning GUI) — scaled to 0 | unsloth/unsloth | 2026.5.9 (studio v0.1.43-beta) |
 | 23 | Cloudflare tunnel (cloudflared) | raw manifests | cloudflare/cloudflared:2026.7.3 |
 | 24 | OpenAI tunnel-client → mempalace MCP | raw manifests | tunnel-client v0.0.11 |
@@ -118,13 +114,6 @@ path and every cross-reference in the docs, for a cosmetic gain.
 Real dependency order for the new components:
 
     15-cert-manager  →  16, 17, 21, 25  (anything terminating TLS in-cluster)
-    19-nemoclaw      →  20-openshell (openshell writes into nemoclaw-sandboxes)
-
-One chart, OpenShell (20), is **vendored** (committed under `20-openshell/chart/`)
-rather than pulled from a repo — a departure from `04`/`05`/`06`. The running
-release came from upstream's floating `0.0.0-dev` tag, and none of the published
-immutable semvers (`0.0.37`–`0.0.42`) reproduces it, so the copy recovered from
-the live Helm release Secret is the only artifact known to match the cluster.
 
 Buzz (17) was briefly vendored too, on a wrong conclusion that its chart was
 unpublished; it is now referenced upstream at an immutable `0.1.6`. See

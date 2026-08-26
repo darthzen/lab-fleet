@@ -53,14 +53,12 @@ adopted, rolled back, or paused independently of every other.
 
 | GitRepo | Namespace | Paths | Risk |
 |---|---|---|---|
-| `lab-nemoclaw` | `nemoclaw` + `nemoclaw-sandboxes` | `19-nemoclaw` | **lowest — start here.** No pod templates at all |
 | `lab-node-red` | `node-red` | `12-node-red` | low |
 | `lab-emby` | `emby` | `11-emby` | low |
 | `lab-resilio` | `resilio` | `13-resilio` | low |
 | `lab-ash4d-origin` | `ash4d-origin` | `16-ash4d-origin` | low |
 | `lab-hermes` | `hermes` | `10-hermes` | low–med — needs `hermes-webui` Secret |
 | `lab-ai` | `ai` | 10 paths (04→09, 21) | med — **no `.yaml` file, staged by hand — see below** |
-| `lab-openshell` | `openshell` | `20-openshell` | med — **after `lab-nemoclaw`**; vendored chart |
 | `lab-buzz` | `buzz` | `17-buzz` (+ nested `17-buzz/minio`, comes automatically) | med — stateful; needs `buzz-relay` Secret |
 | `lab-cloudflare-tunnel` | `cloudflare-tunnel` | `23-cloudflare-tunnel` | low for the cluster, **high stakes for the public site** — **fresh install, not an adoption**; needs `cloudflared-credentials` Secret |
 | `lab-openai-tunnel` | `openai-tunnel` | `24-openai-tunnel` | low — **fresh install, not an adoption**; one stateless pod; needs `tunnel-client-credentials` Secret |

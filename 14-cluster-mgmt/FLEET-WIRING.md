@@ -151,17 +151,14 @@ offline, not TLS mode. Worth a look, but unrelated to this cluster.
 `gitrepos/README.md` for the full table, rollout order, and the manifests
 themselves. Each namespace can be adopted, rolled back, or paused independently.
 
-Order: `lab-nemoclaw` → `lab-node-red` → `lab-emby` / `lab-resilio` →
+Order: `lab-node-red` → `lab-emby` / `lab-resilio` →
 `lab-ash4d-origin` → `lab-hermes` → `lab-ai` (nine paths, one at a time) →
-`lab-openshell` → `lab-buzz` → `lab-lab-memory` → `lab-metallb-system` /
+`lab-buzz` → `lab-metallb-system` /
 `lab-nvidia-device-plugin` / `lab-cattle-monitoring-system` →
 `lab-cert-manager` → `lab-longhorn-system` last.
 
-`lab-nemoclaw` moves to the front because it has no pod templates at all — only
-Namespaces, RBAC, NetworkPolicies and a PVC — so it is the one adoption that
-physically cannot restart anything. `lab-openshell` must follow it (its chart
-writes into `nemoclaw-sandboxes`). `lab-cert-manager` sits second-to-last
-despite being a platform component, because it owns the cert-manager CRDs.
+`lab-cert-manager` sits second-to-last despite being a platform component,
+because it owns the cert-manager CRDs.
 
 At each step: apply (or add a path), let Fleet render, confirm the
 BundleDeployment goes Ready, spot-check the workload, proceed. Roll back by
