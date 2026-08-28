@@ -7,10 +7,19 @@ extraEnv:
   value: GPU-a69c6398-0353-3234-9f35-af0e02865f33
 - name: NVIDIA_DRIVER_CAPABILITIES
   value: compute,utility
-# -1 = never unload. The first model loaded holds its VRAM indefinitely.
-# See the sizing note below for what that costs on a shared box.
+# 5m, changed from -1 on 2026-08-28. -1 meant the first model loaded held its
+# VRAM indefinitely — 29.21 GiB of the V100's 31.75, permanently, at 0%
+# utilization whenever nobody was asking it anything. ComfyUI (07-comfyui) is
+# pinned to this same card and needs roughly 24 GiB for diffusion-class
+# restoration, so the two could never coexist while this was -1.
+#
+# The cost is real and lands on the next caller after an idle gap: ollama
+# reloads ~29 GiB before answering, which is tens of seconds. That is the
+# trade for the card being usable by anything else. If a session is going to
+# be latency-sensitive for a stretch, keep it warm by using it rather than by
+# pinning it here.
 - name: OLLAMA_KEEP_ALIVE
-  value: "-1"
+  value: "5m"
 # ollama sizes the KV cache as num_ctx x num_parallel — each slot reserves the
 # full OLLAMA_CONTEXT_LENGTH, they do not share one window. 1 slot as of
 # 2026-07-30: this box serves one precise coding session at a time, and a

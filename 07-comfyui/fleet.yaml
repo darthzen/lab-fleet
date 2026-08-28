@@ -1,8 +1,10 @@
 # Fleet bundle — ComfyUI (raw manifests). See fleet-wiring-plan Phase 1.
 # Pinned to the V100 by UUID via runtimeClassName: nvidia (NOT the device
 # plugin); manifests carry their own namespace.
-# The Deployment is declared at replicas: 0 to match the cluster — ollama holds
-# that same V100. comfyui-user-script.yaml.txt is reference only, not bundled.
+# The Deployment runs at replicas: 1 as of 2026-08-28; ollama's keep-alive is
+# 5m rather than -1, so it releases that same V100 when idle.
+# Model/output data is a hostPath on /data/comfyui, not a Longhorn PVC.
+# comfyui-user-script.yaml.txt is reference only, not bundled.
 defaultNamespace: ai
 
 # Raw-manifest bundle, but Fleet still deploys it via Helm internally — so
