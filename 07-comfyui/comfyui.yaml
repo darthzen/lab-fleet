@@ -6,13 +6,13 @@ metadata:
   name: comfyui
   namespace: ai
 spec:
-  # SCALED TO ZERO on the cluster, and declared that way here on purpose: the
-  # GPU pin below is the same V100 that ollama holds with OLLAMA_KEEP_ALIVE=-1
-  # (see 04-ollama/values.yaml), so the two cannot both be resident. Scale to 1
-  # when you want ComfyUI and can afford to evict ollama's model.
-  # Fleet will hold this at 0 — bump it here, not with `kubectl scale`, or the
-  # next reconcile puts it back.
-  replicas: 0
+  # Running as of 2026-08-28. Previously held at 0 because ollama pinned this
+  # same V100 with OLLAMA_KEEP_ALIVE=-1; that is now 5m (04-ollama/values.yaml),
+  # so ollama releases the card when idle and the two take turns. First ollama
+  # call after an idle gap pays a ~29 GiB reload.
+  # Fleet is the source of truth for this number — change it here, not with
+  # `kubectl scale`, or the next reconcile puts it back.
+  replicas: 1
   selector:
     matchLabels:
       app: comfyui
@@ -60,11 +60,16 @@ spec:
           requests:
             nvidia.com/gpu: '1'
         volumeMounts:
-        # basedir = models/custom_nodes/outputs; run = venv + ComfyUI + HF
-        # cache. BOTH must be PVC-backed or installs die with the pod.
+        # The volume root IS basedir — models/custom_nodes/input/output/user/
+        # temp sit at the top of /data/comfyui. The old nested basedir/ layer
+        # was flattened away on 2026-08-28 when the directory moved off Longhorn
+        # and got its real name; /data/comfyui/basedir/models said nothing that
+        # /data/comfyui/models does not.
+        # run = venv + ComfyUI + HF cache. Still a subPath, still has to live on
+        # the same persistent volume or every custom-node install dies with the
+        # pod.
         - mountPath: /basedir
           name: data
-          subPath: basedir
         - mountPath: /comfy/mnt
           name: data
           subPath: run
@@ -77,9 +82,18 @@ spec:
         - 44
         - 109
       volumes:
+      # hostPath on the /data btrfs pool (6.9 TB, 7 devices), NOT Longhorn.
+      # Moved off the 150Gi longhorn PVC on 2026-08-28: that volume lived on
+      # default-disk (/var/lib/longhorn on the root fs) and held 129 GB of
+      # models, which was 78% of default-disk's scheduled capacity on its own.
+      # Longhorn replication buys nothing for model weights that are all
+      # re-downloadable, and cost real headroom on the disk everything else
+      # shares. Single-node cluster, so hostPath needs no nodeSelector --
+      # same pattern as emby (/data/stream) and resilio (/data/resilio).
       - name: data
-        persistentVolumeClaim:
-          claimName: comfyui-data
+        hostPath:
+          path: /data/comfyui
+          type: Directory
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -116,9 +130,9 @@ spec:
             cpu: 50m
             memory: 64Mi
         volumeMounts:
+        # Rooted at the volume top, not a basedir/ subPath — that layer is gone.
         - mountPath: /srv
           name: comfyui-data
-          subPath: basedir
         - mountPath: /config
           name: fb-config
       securityContext:
@@ -126,9 +140,11 @@ spec:
         runAsGroup: 1024
         runAsUser: 1024
       volumes:
+      # Same hostPath as the comfyui Deployment above.
       - name: comfyui-data
-        persistentVolumeClaim:
-          claimName: comfyui-data
+        hostPath:
+          path: /data/comfyui
+          type: Directory
       # PVC, not emptyDir: filebrowser.db holds the user/auth state, so an
       # emptyDir means a fresh admin password on every pod restart.
       - name: fb-config
@@ -164,19 +180,6 @@ spec:
   selector:
     app: comfyui-filebrowser
   type: LoadBalancer
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: comfyui-data
-  namespace: ai
-spec:
-  accessModes:
-  - ReadWriteOnce
-  resources:
-    requests:
-      storage: 150Gi
-  storageClassName: longhorn
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
