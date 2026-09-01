@@ -96,7 +96,24 @@ spec:
           value: streamable-http
         - name: SERVER_PORT
           value: '8080'
-        image: ginnux/k8s-mcp-server:latest
+        # PINNED 2026-09-01, was ':latest'. Upstream 1.1.0 (published
+        # 2026-08-31) made MCP_AUTH_TOKEN mandatory for HTTP transports and
+        # refuses to start without >=32 chars: "Refusing to start
+        # streamable-http server". ':latest' moved to it overnight and this
+        # deployment went CrashLoopBackOff the next time it was scaled up,
+        # with no change on our side.
+        #
+        # 1.0.25 is the last release before that requirement and is what this
+        # was already running. Staying here keeps the existing posture: the
+        # server is --read-only, bound to a read-only RBAC role, ClusterIP
+        # with no ingress, and its only consumer is mcpo in this namespace.
+        #
+        # To move to 1.1.0+ we need a >=32 char MCP_AUTH_TOKEN wired here via
+        # secretKeyRef AND mcpo sending it as an Authorization header. mcpo's
+        # config is a ConfigMap in this repo (see mcpo.yaml), so that needs a
+        # way to inject a secret into its config.json first — the token must
+        # not be committed.
+        image: ginnux/k8s-mcp-server:1.0.25
         name: k8s-mcp-server
         ports:
         - containerPort: 8080
