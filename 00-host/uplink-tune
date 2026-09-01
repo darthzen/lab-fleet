@@ -1,0 +1,36 @@
+#!/bin/sh
+# Apply an ethtool tweak to whichever interface currently carries the IPv4
+# default route, rather than to a hardcoded name.
+#
+# NIC names on sdf1 are NOT stable. The 2026-08-29 motherboard swap renamed the
+# uplink enp5s0 -> enp6s0, and moving GPUs between PCIe slots renumbers the bus,
+# which can rename NICs again. Units that hardcode a name do not fail loudly —
+# they fail once at boot with "netlink error: No such device", leave systemd
+# degraded, and nobody notices until something that depended on them is needed.
+# That is exactly how Wake-on-LAN sat unarmed for four days while still
+# appearing to work, because the igb driver happens to default to "wol g".
+#
+# Usage: uplink-tune wol | gro
+set -eu
+
+iface=$(ip -o -4 route show default | awk '{print $5}' | head -1)
+if [ -z "$iface" ]; then
+    echo "uplink-tune: no interface carries the IPv4 default route" >&2
+    exit 1
+fi
+
+case "${1:-}" in
+    wol)
+        echo "uplink-tune: arming Wake-on-LAN (magic packet) on $iface"
+        exec /usr/sbin/ethtool -s "$iface" wol g
+        ;;
+    gro)
+        echo "uplink-tune: applying Tailscale UDP GRO settings on $iface"
+        /usr/sbin/ethtool -K "$iface" rx-udp-gro-forwarding on
+        exec /usr/sbin/ethtool -K "$iface" rx-gro-list off
+        ;;
+    *)
+        echo "usage: uplink-tune wol|gro" >&2
+        exit 2
+        ;;
+esac

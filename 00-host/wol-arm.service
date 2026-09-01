@@ -1,0 +1,15 @@
+# Replaces wol-enp5s0.service, which was pinned to a NIC name that stopped
+# existing at the 2026-08-29 motherboard swap and had been failing every boot
+# since. See uplink-tune for why the name is resolved at runtime.
+[Unit]
+Description=Arm Wake-on-LAN (magic packet) on the uplink interface
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/uplink-tune wol
+
+[Install]
+WantedBy=multi-user.target
