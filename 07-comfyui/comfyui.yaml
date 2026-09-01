@@ -10,6 +10,9 @@ spec:
   # same V100 with OLLAMA_KEEP_ALIVE=-1; that is now 5m (04-ollama/values.yaml),
   # so ollama releases the card when idle and the two take turns. First ollama
   # call after an idle gap pays a ~29 GiB reload.
+  # For the SRV restoration runs ollama goes to 0 instead of taking turns: a
+  # multi-day upscale cannot survive a background MCP call paging 29 GiB onto
+  # a card mid-batch. Use the sdf1-toggle skill on `ai` to park and restore it.
   # Fleet is the source of truth for this number — change it here, not with
   # `kubectl scale`, or the next reconcile puts it back.
   replicas: 1
@@ -27,13 +30,19 @@ spec:
       # Env order below matches the live pod spec so a diff against the cluster
       # stays readable.
       - env:
-        # GPU pin: the Tesla V100 32GB, NOT GPU 0 (a GTX 1070, 8GB). Declared
-        # here because ollama's chart pins the same UUID (04-ollama/values.yaml)
-        # and the pair is the whole reason this Deployment sits at replicas: 0.
-        # Previously left unmanaged so it could be switched by hand; that just
-        # meant helm/Fleet could silently strip it. Switch GPUs by editing here.
+        # GPU pin: BOTH Tesla V100 32GB cards. The GTX 1070 is deliberately not
+        # here -- it is 8GB and emby holds it for transcode (05-emby).
+        #   GPU-a69c6398 = 0B:00.0, x8   -> SeedVR2 DiT   (cuda:0)
+        #   GPU-08639f1d = 0C:00.0, x8   -> SeedVR2 VAE   (cuda:1)
+        # Two cards, not one, since 2026-09-01: splitting DiT and VAE across
+        # them frees enough VRAM to decode 1440x1080 untiled, which is what
+        # removes the tile seams from the SRV Austin City Limits restoration.
+        # Order here sets the cuda:N indices the workflow refers to -- do not
+        # reorder these UUIDs without editing the workflow's device widgets.
+        # Declared here because ollama's chart pins the same UUIDs
+        # (04-ollama/values.yaml); the two take turns on the cards.
         - name: NVIDIA_VISIBLE_DEVICES
-          value: GPU-a69c6398-0353-3234-9f35-af0e02865f33
+          value: GPU-a69c6398-0353-3234-9f35-af0e02865f33,GPU-08639f1d-0f02-83a5-359b-923f24116259
         - name: COMFY_CMDLINE_EXTRA
           value: --listen 0.0.0.0
         - name: BASE_DIRECTORY
@@ -54,11 +63,13 @@ spec:
         ports:
         - containerPort: 8188
           name: 8188tcp
-        resources:
-          limits:
-            nvidia.com/gpu: '1'
-          requests:
-            nvidia.com/gpu: '1'
+        # No nvidia.com/gpu request on purpose. The device plugin REWRITES
+        # NVIDIA_VISIBLE_DEVICES whenever it allocates, so asking it for cards
+        # silently discarded the UUID pin above -- on 2026-09-01 this pod asked
+        # for 1 GPU and was handed GPU-08639f1d, the one card the env said not
+        # to use. Leaving the request off lets the nvidia runtime honour the
+        # UUIDs verbatim. Same pattern as ollama (04-ollama) and emby (05-emby);
+        # single-node cluster, so the scheduler accounting bought nothing.
         volumeMounts:
         # The volume root IS basedir — models/custom_nodes/input/output/user/
         # temp sit at the top of /data/comfyui. The old nested basedir/ layer
