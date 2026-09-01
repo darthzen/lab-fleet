@@ -35,7 +35,17 @@ spec:
         # registry.ash4d.com), so this needs the harbor-pull imagePullSecret below
         # — that Secret is created out-of-band and is NOT in this repo.
         image: registry.ash4d.com/ash4d-lab/ollama-exporter:0.4.0-stream2
-        imagePullPolicy: Always
+        # IfNotPresent since 2026-09-01, and this is a WORKAROUND, not a
+        # preference. Harbor is down — registry.ash4d.com returns 503 and there
+        # are no Harbor pods on the cluster (only a `harbor-gone` pod in Error
+        # in ns ai). With Always, every restart goes ImagePullBackOff even
+        # though 0.4.0-stream2 is already cached in containerd on sdf1, which
+        # is exactly what happened bringing this back up after the rack came on.
+        #
+        # Cost of IfNotPresent: a rebuilt image pushed under an existing tag is
+        # NOT picked up. Tags here are versioned, so that is survivable — but
+        # put this back to Always once Harbor serves again.
+        imagePullPolicy: IfNotPresent
         livenessProbe:
           httpGet:
             path: /healthz

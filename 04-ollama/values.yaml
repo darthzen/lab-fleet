@@ -1,10 +1,22 @@
 extraEnv:
-# Pins ollama to the Tesla V100 32 GB. Do NOT rely on the device plugin to
-# choose: GPU 0 on this node is a GTX 1070 (8 GB), which cannot hold a 30B-class
-# model at any useful context. See ollama.gpu.enabled below — the two settings
-# are a pair.
+# 'all' as of 2026-09-01, replacing a single-UUID pin to one V100. The pin
+# existed only to stop the device plugin handing ollama the 8 GB GTX 1070 that
+# used to sit at GPU 0. The 1070 is out of the chassis and both enumerated GPUs
+# are now Tesla V100 32 GB PCIe cards, so 'all' means exactly the two V100s —
+# 64 GB of VRAM instead of 32.
+#
+# REVISIT WHEN THE 1070 GOES BACK IN. It is coming back, in the x4 slot, and
+# 'all' would then expose it to ollama alongside the V100s. At that point pin
+# to the two V100 UUIDs explicitly instead:
+#   GPU-a69c6398-0353-3234-9f35-af0e02865f33   (04:00.0 as of 2026-09-01)
+#   GPU-08639f1d-0f02-83a5-359b-923f24116259   (0b:00.0 as of 2026-09-01)
+#
+# runtime mode is "auto" in /etc/nvidia-container-runtime/config.toml, so a
+# bare 'all' resolves via legacy nvidia-container-cli against the live driver,
+# not via /etc/cdi/nvidia.yaml (which is stale — still lists the 1070).
+# See ollama.gpu.enabled below — the two settings are a pair.
 - name: NVIDIA_VISIBLE_DEVICES
-  value: GPU-a69c6398-0353-3234-9f35-af0e02865f33
+  value: all
 - name: NVIDIA_DRIVER_CAPABILITIES
   value: compute,utility
 # 5m, changed from -1 on 2026-08-28. -1 meant the first model loaded held its
@@ -85,11 +97,14 @@ ollama:
   gpu:
     # false ON PURPOSE, and this is what the cluster actually runs. Setting it
     # true makes the chart request nvidia.com/gpu, at which point the device
-    # plugin injects its own NVIDIA_VISIBLE_DEVICES and may hand out GPU 0
-    # (the 8 GB GTX 1070). GPU access here comes from runtimeClassName: nvidia
-    # plus the explicit UUID above.
+    # plugin injects its own NVIDIA_VISIBLE_DEVICES and picks the cards. That
+    # is the wrong control once the GTX 1070 returns to this node, because a
+    # plain count request cannot express "the V100s, not the 1070". GPU access
+    # here comes from runtimeClassName: nvidia plus NVIDIA_VISIBLE_DEVICES
+    # above.
     enabled: false
-    number: 1
+    # Unused while enabled is false. 2 reflects the two V100s now present.
+    number: 2
     type: nvidia
   models:
     pull:
