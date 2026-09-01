@@ -1,0 +1,14 @@
+# Was pinned to enp5s0 and failing every boot since the 2026-08-29 motherboard
+# swap. See uplink-tune for why the interface is resolved at runtime.
+[Unit]
+Description=Tailscale UDP GRO Optimization
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/uplink-tune gro
+
+[Install]
+WantedBy=multi-user.target
