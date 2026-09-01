@@ -1,0 +1,43 @@
+# Fleet GitRepo — cattle-dashboards namespace.
+#
+# This is the Fleet `GitRepo` CUSTOM RESOURCE (gitrepos.fleet.cattle.io), not a
+# git repository: it points Fleet at the existing lab-fleet repo and tells it
+# which paths to render. It lives on the RANCHER CONTROLLER
+# (192.168.7.148, kubectl context `rancher`), so it is not part of any bundle here.
+#
+#   kubectl --context rancher apply -f 14-cluster-mgmt/gitrepos/lab-cattle-dashboards.yaml
+#
+# One GitRepo per namespace — see gitrepos/README.md.
+#
+# NOT YET APPLIED as of 2026-09-01. The sdf1-health dashboard is currently a
+# hand-applied ConfigMap in cattle-dashboards; 03-gpu/dashboards/ is the
+# versioned copy of it, carrying the same dashboard JSON as what is live
+# (whitespace differs; the parsed JSON is equal). Applying this file is
+# the single adoption step that puts it under Fleet. Read the corrections at
+# the top of gitrepos/README.md first — in particular, once adopted, REMOVING
+# the path uninstalls the ConfigMap rather than rolling it back, which would
+# take the kiosk dashboard off the screen.
+apiVersion: fleet.cattle.io/v1alpha1
+kind: GitRepo
+metadata:
+  name: lab-cattle-dashboards
+  namespace: fleet-default
+spec:
+  repo: https://github.com/darthzen/lab-fleet
+  branch: main
+  # Explicit, matching the other GitRepos here. Fleet's default is 15s but this
+  # cluster's gitjob runs with gitjob.syncPeriod 2h, and a transient GitHub
+  # timeout on 2026-07-30 left four repos dormant for 28+ minutes. Stating it
+  # bounds how stale this can get. See FLEET-WIRING.md.
+  pollingInterval: 60s
+  paths:
+    - 03-gpu/dashboards
+  targets:
+    - clusterSelector:
+        matchLabels:
+          ash4d-lab: ""
+  # correctDrift OFF, matching every other GitRepo here. Turning it on would
+  # make Fleet revert dashboard edits made in the Grafana UI, which is a real
+  # workflow on this cluster.
+  correctDrift:
+    enabled: false

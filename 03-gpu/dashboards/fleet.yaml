@@ -1,0 +1,9 @@
+# Fleet bundle — Grafana dashboards rendered by the rancher-monitoring sidecar.
+#
+# Sibling bundle to dcgm-exporter/ and runtimeclass/, not nested under either.
+# 03-gpu itself is the nvdp bundle and its GitRepo lists 03-gpu/dcgm-exporter
+# explicitly, so nothing here deploys until a GitRepo names this path.
+#
+# Lands in cattle-dashboards, NOT cattle-monitoring-system: the Grafana sidecar
+# discovers dashboards by the label grafana_dashboard="1" in that namespace.
+defaultNamespace: cattle-dashboards
