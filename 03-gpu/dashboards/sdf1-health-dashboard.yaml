@@ -17,6 +17,20 @@
 #   GPU-a69c6398...  V100 (a69c)   red
 #   GPU-08639f1d...  V100 (0863)   purple
 #   GPU-5641c03a...  GTX 1070      orange
+#
+# The top strip was missed by that fix and kept a bare max(DCGM_FI_DEV_GPU_TEMP)
+# until 2026-09-01 -- one unlabelled number across all three cards, so it showed
+# whichever was hottest with no way to tell which. It is now "V100 Temp", two
+# values keyed on UUID with the GTX 1070 filtered out by modelName. Filtering on
+# modelName is fine; it is grouping by it that collapses the pair.
+# The two cards do NOT behave alike and the split is the point: measured under
+# the SRV upscale, a69c (DiT) sat at 76C while pinned to its 250W power cap and
+# never thermally throttled, while 0863 (VAE) reached 80C at only 188W and had
+# logged SW thermal slowdown. 0863 is the card with the airflow problem.
+#
+# Strip width is exactly 24 columns with no slack -- V100 VRAM gave up a column
+# to pay for the second temperature value. Widening any panel here means taking
+# the column from another.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -341,10 +355,11 @@ data:
         },
         {
           "type": "stat",
-          "title": "GPU Temp (max)",
+          "title": "V100 Temp",
+          "description": "Both V100s, keyed on UUID. A bare max() here collapsed all three cards to one unlabelled number - the same failure the timeseries panels were already fixed for. Thresholds are set against the card's limits, not round numbers: 83C is the V100 max operating temp and 88C is its slowdown point, so yellow at 78 gives warning before throttling rather than after.",
           "gridPos": {
             "h": 3,
-            "w": 2,
+            "w": 3,
             "x": 10,
             "y": 0
           },
@@ -355,14 +370,15 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "max(DCGM_FI_DEV_GPU_TEMP)",
+              "expr": "max by (UUID) (DCGM_FI_DEV_GPU_TEMP{modelName=\"Tesla PG500-216\"})",
+              "legendFormat": "{{UUID}}",
               "instant": true
             }
           ],
           "fieldConfig": {
             "defaults": {
               "unit": "celsius",
-              "decimals": 1,
+              "decimals": 0,
               "color": {
                 "mode": "thresholds"
               },
@@ -375,22 +391,48 @@ data:
                   },
                   {
                     "color": "yellow",
-                    "value": 75
+                    "value": 78
                   },
                   {
                     "color": "red",
-                    "value": 85
+                    "value": 83
                   }
                 ]
               }
             },
-            "overrides": []
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "GPU-a69c6398-0353-3234-9f35-af0e02865f33"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "a69c"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "GPU-08639f1d-0f02-83a5-359b-923f24116259"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "0863"
+                  }
+                ]
+              }
+            ]
           },
           "options": {
             "graphMode": "none",
             "colorMode": "value",
-            "textMode": "auto",
+            "textMode": "value_and_name",
             "justifyMode": "center",
+            "orientation": "horizontal",
             "reduceOptions": {
               "calcs": [
                 "lastNotNull"
@@ -403,8 +445,8 @@ data:
           "title": "V100 VRAM (both)",
           "gridPos": {
             "h": 3,
-            "w": 3,
-            "x": 12,
+            "w": 2,
+            "x": 13,
             "y": 0
           },
           "datasource": {
