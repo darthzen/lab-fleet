@@ -20,17 +20,30 @@
 #
 # The top strip was missed by that fix and kept a bare max(DCGM_FI_DEV_GPU_TEMP)
 # until 2026-09-01 -- one unlabelled number across all three cards, so it showed
-# whichever was hottest with no way to tell which. It is now "V100 Temp", two
-# values keyed on UUID with the GTX 1070 filtered out by modelName. Filtering on
-# modelName is fine; it is grouping by it that collapses the pair.
+# whichever was hottest with no way to tell which. It became "V100 Temp", two
+# values in one panel keyed on UUID; on 2026-09-03 that panel was split again
+# into "V100 a69c" and "V100 0863", one card each. Two values sharing a 3-column
+# panel gave each about a column and a half and rendered them too small to read
+# off the kiosk camera. Each card now filters on its own UUID label rather than
+# grouping, textMode is "value" so no inline series name competes with the
+# number, and the panel title carries the identity. Value text is left on
+# Grafana auto-sizing deliberately: it scales to whatever the kiosk is running
+# at, where a pinned valueSize would overflow or shrink at another resolution.
 # The two cards do NOT behave alike and the split is the point: measured under
 # the SRV upscale, a69c (DiT) sat at 76C while pinned to its 250W power cap and
 # never thermally throttled, while 0863 (VAE) reached 80C at only 188W and had
-# logged SW thermal slowdown. 0863 is the card with the airflow problem.
+# logged SW thermal slowdown. On 2026-09-03 0863 was found pinned at 81-82C with
+# SW thermal slowdown active and its SM clock cut from 1380 MHz to 570-670 MHz,
+# a 2.4x slowdown on real work, at only ~90W of a 250W limit -- cooling-limited,
+# not power-limited. Rick had swapped in quieter case fans as a test; putting the
+# original fans back and adding a 120mm in front of them cleared it, confirmed by
+# VAE encode dropping from 7.5 min/batch back to 3.0 within one segment. Watch
+# 0863 here: it is the card that shows an airflow regression first.
 #
-# Strip width is exactly 24 columns with no slack -- V100 VRAM gave up a column
-# to pay for the second temperature value. Widening any panel here means taking
-# the column from another.
+# Strip width is exactly 24 columns with no slack. The two 3-column temp panels
+# were paid for by deleting Uptime, which was 2 columns of hours nobody reads off
+# a wall screen, plus 1 column off Ollama Model. Widening any panel here means
+# taking the column from another.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -355,8 +368,8 @@ data:
         },
         {
           "type": "stat",
-          "title": "V100 Temp",
-          "description": "Both V100s, keyed on UUID. A bare max() here collapsed all three cards to one unlabelled number - the same failure the timeseries panels were already fixed for. Thresholds are set against the card's limits, not round numbers: 83C is the V100 max operating temp and 88C is its slowdown point, so yellow at 78 gives warning before throttling rather than after.",
+          "title": "V100 a69c",
+          "description": "Temperature of the single V100 with UUID GPU-a69c6398-0353-3234-9f35-af0e02865f33, matched on the UUID label rather than the gpu index, which renumbers when cards are reseated. Each card gets its own panel so the kiosk camera reads one large number per card instead of two small ones sharing a panel. Thresholds are the card's limits, not round numbers: 83C is the V100 max operating temp and 88C its slowdown point, so yellow at 78 warns before throttling rather than after.",
           "gridPos": {
             "h": 3,
             "w": 3,
@@ -370,8 +383,7 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "max by (UUID) (DCGM_FI_DEV_GPU_TEMP{modelName=\"Tesla PG500-216\"})",
-              "legendFormat": "{{UUID}}",
+              "expr": "max(DCGM_FI_DEV_GPU_TEMP{UUID=\"GPU-a69c6398-0353-3234-9f35-af0e02865f33\"})",
               "instant": true
             }
           ],
@@ -400,37 +412,73 @@ data:
                 ]
               }
             },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "GPU-a69c6398-0353-3234-9f35-af0e02865f33"
-                },
-                "properties": [
-                  {
-                    "id": "displayName",
-                    "value": "a69c"
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "GPU-08639f1d-0f02-83a5-359b-923f24116259"
-                },
-                "properties": [
-                  {
-                    "id": "displayName",
-                    "value": "0863"
-                  }
-                ]
-              }
-            ]
+            "overrides": []
           },
           "options": {
             "graphMode": "none",
             "colorMode": "value",
-            "textMode": "value_and_name",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            }
+          }
+        },
+        {
+          "type": "stat",
+          "title": "V100 0863",
+          "description": "Temperature of the single V100 with UUID GPU-08639f1d-0f02-83a5-359b-923f24116259, matched on the UUID label rather than the gpu index, which renumbers when cards are reseated. Each card gets its own panel so the kiosk camera reads one large number per card instead of two small ones sharing a panel. Thresholds are the card's limits, not round numbers: 83C is the V100 max operating temp and 88C its slowdown point, so yellow at 78 warns before throttling rather than after.",
+          "gridPos": {
+            "h": 3,
+            "w": 3,
+            "x": 13,
+            "y": 0
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "max(DCGM_FI_DEV_GPU_TEMP{UUID=\"GPU-08639f1d-0f02-83a5-359b-923f24116259\"})",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "celsius",
+              "decimals": 0,
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 78
+                  },
+                  {
+                    "color": "red",
+                    "value": 83
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "graphMode": "none",
+            "colorMode": "value",
+            "textMode": "value",
             "justifyMode": "center",
             "orientation": "horizontal",
             "reduceOptions": {
@@ -446,7 +494,7 @@ data:
           "gridPos": {
             "h": 3,
             "w": 2,
-            "x": 13,
+            "x": 16,
             "y": 0
           },
           "datasource": {
@@ -505,7 +553,7 @@ data:
           "gridPos": {
             "h": 3,
             "w": 2,
-            "x": 15,
+            "x": 18,
             "y": 0
           },
           "datasource": {
@@ -552,62 +600,11 @@ data:
         },
         {
           "type": "stat",
-          "title": "Uptime",
-          "gridPos": {
-            "h": 3,
-            "w": 2,
-            "x": 17,
-            "y": 0
-          },
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "expr": "max(node_time_seconds - node_boot_time_seconds)",
-              "instant": true
-            }
-          ],
-          "fieldConfig": {
-            "defaults": {
-              "unit": "s",
-              "decimals": 0,
-              "color": {
-                "mode": "thresholds"
-              },
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "options": {
-            "graphMode": "none",
-            "colorMode": "value",
-            "textMode": "auto",
-            "justifyMode": "center",
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ]
-            }
-          }
-        },
-        {
-          "type": "stat",
           "title": "Ollama Model",
           "gridPos": {
             "h": 3,
-            "w": 5,
-            "x": 19,
+            "w": 4,
+            "x": 20,
             "y": 0
           },
           "datasource": {
