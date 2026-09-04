@@ -57,10 +57,17 @@ extraEnv:
 #
 # Load tests, f16 x 1 slot on the 31.75 GiB card (size == size_vram means
 # fully GPU-resident):
-#      98304 -> 29.21 GiB total, fully on GPU   <- current setting
+# Single-V100 load test, 2026-07-30 (historical, one 32 GiB card):
+#      98304 -> 29.21 GiB total, fully on GPU
 #     106496 -> spills ~2 GiB to CPU
-#     114688 -> spills ~2.1 GiB
 #     131072 -> spills ~3.6 GiB (5 layers offloaded)
+# Two V100s (64 GiB), measured 2026-09-03 on qwen3.8:27b-mtp-q8-precise:
+#      98304 -> 33 GiB total, ~19 GiB per card, 100% GPU
+#     131072 -> ~39 GiB (KV is 64 KiB/token on this hybrid-attention arch)
+#     262144 -> ~47 GiB (model's native max)
+# 131072 chosen 2026-09-03: hermes (laptop + 10-hermes) now sets
+# context_length 131072 and ollama's /v1 endpoint ignores per-request
+# options.num_ctx, so this server default is what every hermes request gets.
 #
 # Hard floor is 65536: hermes-agent (10-hermes) needs at least 64k. Below
 # that, hermes auto-detects 262144 from model metadata, packs prompts to fit,
@@ -71,7 +78,7 @@ extraEnv:
 # helm never knew about — an undeclared value gets silently reset to ollama's
 # built-in default on the next upgrade.
 - name: OLLAMA_CONTEXT_LENGTH
-  value: "98304"
+  value: "131072"
 # Flash attention stays on for prompt-processing speed regardless of KV type.
 #
 # KV cache moved q8_0 -> f16 on 2026-07-30, deliberately: full-precision KV,

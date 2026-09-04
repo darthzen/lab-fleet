@@ -5,7 +5,7 @@
 
 Key choices: Tesla V100 (32 GB) pinned by GPU UUID; flash attention with an
 **f16 KV cache** (full precision — accuracy over concurrency);
-`OLLAMA_CONTEXT_LENGTH=98304` (96k) with `OLLAMA_NUM_PARALLEL=1`;
+`OLLAMA_CONTEXT_LENGTH=131072` (128k) with `OLLAMA_NUM_PARALLEL=1`;
 LoadBalancer at `192.168.7.153:11434` so LAN clients (Claude Code via
 ollama-code-mcp, the Xcode instance) reach it directly. 200Gi Longhorn PV for
 models. Coding tags are declared in `values.yaml` under `ollama.models.create`
