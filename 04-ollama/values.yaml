@@ -20,19 +20,17 @@ extraEnv:
   value: GPU-a69c6398-0353-3234-9f35-af0e02865f33,GPU-08639f1d-0f02-83a5-359b-923f24116259
 - name: NVIDIA_DRIVER_CAPABILITIES
   value: compute,utility
-# 5m, changed from -1 on 2026-08-28. -1 meant the first model loaded held its
-# VRAM indefinitely — 29.21 GiB of the V100's 31.75, permanently, at 0%
-# utilization whenever nobody was asking it anything. ComfyUI (07-comfyui) is
-# pinned to this same card and needs roughly 24 GiB for diffusion-class
-# restoration, so the two could never coexist while this was -1.
+# -1 (hold the model in VRAM indefinitely), restored 2026-09-03.
 #
-# The cost is real and lands on the next caller after an idle gap: ollama
-# reloads ~29 GiB before answering, which is tens of seconds. That is the
-# trade for the card being usable by anything else. If a session is going to
-# be latency-sensitive for a stretch, keep it warm by using it rather than by
-# pinning it here.
+# History: -1 -> 5m on 2026-08-28 because ComfyUI (07-comfyui) shared the
+# single V100 and needed ~24 GiB for diffusion-class restoration, so ollama
+# could not hold its 29 GiB permanently. With two V100s (64 GiB) the 27B Q8
+# at 131072 ctx measures 35 GiB across both cards and ComfyUI is no longer in
+# ollama's budget, so the idle-eviction trade no longer buys anything and its
+# cost was real: every caller after an idle gap waited 90-180 s for a reload
+# (a hermes one-shot measured 2 min, almost all of it model load).
 - name: OLLAMA_KEEP_ALIVE
-  value: "5m"
+  value: "-1"
 # ollama sizes the KV cache as num_ctx x num_parallel — each slot reserves the
 # full OLLAMA_CONTEXT_LENGTH, they do not share one window. 1 slot as of
 # 2026-07-30: this box serves one precise coding session at a time, and a
