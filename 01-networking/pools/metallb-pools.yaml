@@ -15,3 +15,8 @@ metadata:
 spec:
   ipAddressPools:
   - lan-pool
+  # sdf1 has a second LAN NIC (enp7s0f1, no IP) on the same switch; without this
+  # restriction the speaker answers VIP ARP from both NICs and clients that pick
+  # enp7s0f1's MAC blackhole. Diagnosed 2026-09-03.
+  interfaces:
+  - enp6s0
