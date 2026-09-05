@@ -15,8 +15,11 @@ metadata:
 spec:
   ipAddressPools:
   - lan-pool
-  # sdf1 has a second LAN NIC (enp7s0f1, no IP) on the same switch; without this
-  # restriction the speaker answers VIP ARP from both NICs and clients that pick
-  # enp7s0f1's MAC blackhole. Diagnosed 2026-09-03.
+  # sdf1 has a second LAN NIC on the same switch; without this restriction the
+  # speaker answers VIP ARP from both NICs and clients that pick the second
+  # NIC's MAC blackhole. Diagnosed 2026-09-03.
+  # NIC names shifted after the 2026-09-05 reboot: enp6s0 -> enp5s0 (primary,
+  # .149), enp7s0f1 -> enp6s0f1. If a future reboot renames them again, this
+  # pin must follow the NIC that holds 192.168.7.149.
   interfaces:
-  - enp6s0
+  - enp5s0
