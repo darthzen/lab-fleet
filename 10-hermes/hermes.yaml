@@ -76,6 +76,14 @@ spec:
         volumeMounts:
         - mountPath: /opt/data
           name: data
+        # The sdf1 /data btrfs pool, mounted read-write so the agent can copy
+        # files in and out. Write access follows host permissions: /data is
+        # root:root 755, so the agent (uid 1000) can read everything and write
+        # only where the host directory allows. hostPath is fine here because
+        # sdf1 is the only node; if the cluster ever gains a second node this
+        # must become an NFS PV (the export already exists in /etc/exports).
+        - mountPath: /data
+          name: lab-data
       # The UI runs as uid 10000 (hence the fix-perms init container) and wants
       # the agent's source tree on disk to introspect it — supplied by the
       # copy-agent-src init container via the agent-src emptyDir.
@@ -122,6 +130,9 @@ spec:
           name: data
         - mountPath: /home/hermeswebui/.hermes/hermes-agent
           name: agent-src
+        # Same /data pool as the agent, same path, so file references match.
+        - mountPath: /data
+          name: lab-data
       initContainers:
       # The PVC is created root-owned; hermes-webui runs as 10000 and cannot
       # write its state dir without this.
@@ -154,6 +165,10 @@ spec:
           claimName: hermes-data
       - emptyDir: {}
         name: agent-src
+      - name: lab-data
+        hostPath:
+          path: /data
+          type: Directory
 ---
 apiVersion: v1
 kind: Service
