@@ -40,6 +40,12 @@ spec:
           value: 0.0.0.0
         - name: API_SERVER_PORT
           value: '8642'
+        # Self-hosted firecrawl (25-firecrawl) for web fetch/extract. The API
+        # runs with USE_DB_AUTHENTICATION=false, so no key is needed; setting
+        # the URL alone routes hermes' web tools to it. Pairs with
+        # web.backend: firecrawl in hermes' config.yaml on the PVC.
+        - name: FIRECRAWL_API_URL
+          value: http://api.firecrawl.svc.cluster.local:3002
         - name: API_SERVER_KEY
           valueFrom:
             secretKeyRef:
