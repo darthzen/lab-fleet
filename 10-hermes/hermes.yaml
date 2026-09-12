@@ -117,7 +117,13 @@ spec:
           value: /home/hermeswebui/.hermes/webui
         - name: HERMES_NIX_BUILD
           value: '1'
-        image: ghcr.io/nesquena/hermes-webui:latest
+        # Pinned 2026-09-12 to the 2026-08-26 build. The 2026-09-12 :latest build
+        # splits @provider:model with rsplit(':', 1) in api/config.py
+        # (_parse_provider_qualified_model_id), so an Ollama tag such as
+        # qwen3.8:27b-mtp-q8-precise becomes provider 'custom:qwen3.8' and model
+        # '27b-mtp-q8-precise', which Ollama 404s. The agent parses it correctly.
+        # Unpin once upstream handles colon-tagged models on that path.
+        image: ghcr.io/nesquena/hermes-webui@sha256:1cbd42331e2046706230310e5fa0db537860536b87e7011630d4d4b6eebab2e2
         imagePullPolicy: Always
         name: hermes-webui
         ports:
