@@ -66,7 +66,13 @@ spec:
             secretKeyRef:
               key: SLACK_ALLOWED_USERS
               name: hermes-slack
-        image: docker.io/nousresearch/hermes-agent:latest
+        # Pinned 2026-09-12 to the 2026-09-06 build, the last one that ran before
+        # the move. v0.21.2 (2026-09-11) resolves the 'ollama' provider alias to
+        # 'custom', so the webui builds the route hint
+        # @custom:qwen3.8:27b-mtp-q8-precise and its parser truncates the model
+        # to '27b-mtp-q8-precise', which Ollama 404s. Keep this digest and the
+        # copy-agent-src one below in step; the webui runs this source tree.
+        image: docker.io/nousresearch/hermes-agent@sha256:efb82540aeb8ac21c58ecb4482bd3eb103ea617da2af2c61f12526ed68f6c2d9
         imagePullPolicy: Always
         name: hermes-agent
         ports:
@@ -165,7 +171,7 @@ spec:
         - sh
         - -c
         - cp -a /opt/hermes/. /agent-src/ && echo agent-source-copied
-        image: docker.io/nousresearch/hermes-agent:latest
+        image: docker.io/nousresearch/hermes-agent@sha256:efb82540aeb8ac21c58ecb4482bd3eb103ea617da2af2c61f12526ed68f6c2d9
         imagePullPolicy: Always
         name: copy-agent-src
         volumeMounts:
