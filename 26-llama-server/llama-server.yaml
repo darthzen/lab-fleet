@@ -70,9 +70,12 @@ spec:
         - 0.0.0.0
         - --port
         - '8080'
-        # Everything that can go on the two V100s does. --fit stays at its
-        # default (on) so llama.cpp balances the split across the cards; the
-        # two overrides below are the placement decisions it cannot make.
+        # Everything that can go on the two V100s does. --fit is OFF: it aborts
+        # anyway once -ngl is set, and the placement below is computed from the
+        # real per-layer tensor sizes (GGUF headers, 2026-09-20), which --fit
+        # cannot do for a CPU-expert split.
+        - --fit
+        - 'off'
         - --n-gpu-layers
         - all
         # The 51B n-gram table (tensor per_layer_token_embd) is a lookup, not a
@@ -81,17 +84,25 @@ spec:
         # through the memory map. This is the whole reason the model fits.
         - --override-tensor
         - per_layer_token_embd=CPU
-        # Routed experts of the first N layers live in host RAM. Budget
-        # (2026-09-20, decimal GB): 68.7 GB VRAM total, ~4 GB per card kept
-        # back for CUDA context, compute buffers and the 64k KV cache, leaving
-        # ~60 GB for weights; Q4_K_XL wants 82.5 GB, so ~23 GB (~14 of 47
-        # expert layers at ~1.64 GB each) goes to the CPU side. The 3700X
-        # computes those experts every token — this is the speed cost of
-        # Q4_K_XL over IQ4_XS, and the FIRST knob to tune from the load log
-        # ("offloaded N/M layers", per-device buffer sizes). Raise it if a
-        # card OOMs at load; lower it if the log shows VRAM headroom.
+        # Routed experts of the first N layers live in host RAM. Q4_K_XL has
+        # 48 layers at ~1.57 GB of experts each (layers 2/4/30/46/47 run 1.84-
+        # 2.04 GB); attention/DeltaNet is ~0.09 GB per layer. N=18 keeps 29 GB
+        # of experts on the CPU side and 53.5 GB of weights on the cards.
+        # The 3700X computes those 18 layers' experts every token — this is
+        # the speed cost of Q4_K_XL over IQ4_XS, and the FIRST knob to tune
+        # from the load log (per-device buffer sizes). Lower it while both
+        # cards show headroom; raise it if either OOMs at load.
         - --n-cpu-moe
-        - '14'
+        - '18'
+        # llama.cpp splits layers across GPUs by COUNT, not bytes. With the
+        # first 18 layers' experts on the CPU, card 0's layers are light, so an
+        # even split put 37.8 GiB on card 1 and OOMed (first attempt,
+        # 2026-09-20). 33:15 gives 26.7 GB on card 0 (18 light + 15 heavy
+        # layers) and 26.8 GB on card 1 (15 heavy layers + output/embeddings),
+        # ~7.5 GB headroom each for KV, compute buffers and CUDA context.
+        # Recompute this whenever --n-cpu-moe changes: k ≈ N + (48 - N) / 2.
+        - --tensor-split
+        - '33,15'
         - --load-mode
         - mmap
         # V100 is SM 7.0: flash attention runs on the generic kernel config
