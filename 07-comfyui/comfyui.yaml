@@ -13,9 +13,13 @@ spec:
   # For the SRV restoration runs ollama goes to 0 instead of taking turns: a
   # multi-day upscale cannot survive a background MCP call paging 29 GiB onto
   # a card mid-batch. Use the sdf1-toggle skill on `ai` to park and restore it.
+  # PARKED at 0 on 2026-09-20: 26-llama-server holds both V100s for
+  # Qwen3.8-Flash-Next, and this pod was also the node's largest RAM consumer
+  # (31 GB RSS idle) — that RAM now backs the CPU-side experts. comfyui-
+  # filebrowser below stays at 1; it is a file UI over the hostPath, no GPU.
   # Fleet is the source of truth for this number — change it here, not with
   # `kubectl scale`, or the next reconcile puts it back.
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app: comfyui

@@ -58,7 +58,7 @@ adopted, rolled back, or paused independently of every other.
 | `lab-resilio` | `resilio` | `13-resilio` | low |
 | `lab-ash4d-origin` | `ash4d-origin` | `16-ash4d-origin` | low |
 | `lab-hermes` | `hermes` | `10-hermes` | low–med — needs `hermes-webui` Secret |
-| `lab-ai` | `ai` | 10 paths (04→09, 21) | med — **no `.yaml` file, staged by hand — see below** |
+| `lab-ai` | `ai` | 11 paths (04→09, 21, 26) | med — **no `.yaml` file, staged by hand — see below** |
 | `lab-buzz` | `buzz` | `17-buzz` (+ nested `17-buzz/minio`, comes automatically) | med — stateful; needs `buzz-relay` Secret |
 | `lab-cloudflare-tunnel` | `cloudflare-tunnel` | `23-cloudflare-tunnel` | low for the cluster, **high stakes for the public site** — **fresh install, not an adoption**; needs `cloudflared-credentials` Secret |
 | `lab-openai-tunnel` | `openai-tunnel` | `24-openai-tunnel` | low — **fresh install, not an adoption**; one stateless pod; needs `tunnel-client-credentials` Secret |
@@ -98,9 +98,12 @@ and leave everything else alone:
 #   patch, per correction 4)
 kubectl --context rancher -n fleet-default patch gitrepo lab-ai --type=merge -p '{"spec":{"paths":[
   "08-indexer","09-mcp","07-comfyui","06-milvus/attu","04-ollama",
-  "21-unsloth-studio"
+  "21-unsloth-studio","26-llama-server"
 ]}}'
 ```
+
+`26-llama-server` was appended 2026-09-20 (fresh install, not an adoption — a
+sibling top-level path, so corrections 2 and 4 do not apply).
 
 `09-mcp/ollama-code` is first in that order because it is the only entry that is
 **not** an adoption — it moves the ollama-code MCP server out of its own
