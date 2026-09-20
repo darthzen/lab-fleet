@@ -1,0 +1,242 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: llama-server
+  name: llama-server
+  namespace: ai
+spec:
+  # Running as of 2026-09-20. This takes both V100s, so 04-ollama
+  # (replicaCount: 0) and 07-comfyui (replicas: 0) are parked while it runs.
+  # Fleet is the source of truth for this number — change it here, not with
+  # `kubectl scale`, or the next reconcile puts it back.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: llama-server
+  # Recreate, not RollingUpdate: the GPUs are exclusive, so old and new pods
+  # can never overlap.
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: llama-server
+    spec:
+      initContainers:
+      # Gate on a COMPLETE model download. The GGUFs are pulled onto the host
+      # by /var/lib/models/qwen3.8-flash-next/download.sh (resumable curl, see
+      # README.md); a pod that starts against a half-written shard fails at
+      # load and CrashLoops. Byte sizes are the exact values from the
+      # Hugging Face tree API for unsloth/Qwen3.8-Flash-Next-GGUF, so a file
+      # that is present but short keeps the wait going.
+      - command:
+        - /bin/sh
+        - -c
+        - |
+          set -u
+          want="
+          UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf 10946624
+          UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00002-of-00004.gguf 49859583136
+          UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00003-of-00004.gguf 49376141504
+          UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00004-of-00004.gguf 12087983520
+          "
+          check() {
+            echo "$want" | while read -r f size; do
+              [ -z "$f" ] && continue
+              have=$(stat -c %s "/models/$f" 2>/dev/null || echo 0)
+              [ "$have" = "$size" ] || { echo "$(date -Iseconds) waiting: $f $have/$size"; exit 1; }
+            done
+          }
+          until check; do sleep 30; done
+          echo "all shards complete"
+        image: registry.suse.com/bci/bci-base:15.7
+        name: wait-for-model
+        volumeMounts:
+        - mountPath: /models
+          name: models
+          readOnly: true
+      containers:
+      - args:
+        # UD-Q4_K_XL (unsloth dynamic 4-bit, 111 GB): 77 GB routed experts,
+        # 28.8 GB n-gram table (IQ4_NL, never quantized below 4-bit),
+        # ~5.5 GB always-on attention/DeltaNet/shared-expert/embeddings.
+        # llama.cpp reads the other shards from the same directory.
+        - --model
+        - /models/UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf
+        - --alias
+        - qwen3.8-flash-next
+        - --host
+        - 0.0.0.0
+        - --port
+        - '8080'
+        # Everything that can go on the two V100s does. --fit stays at its
+        # default (on) so llama.cpp balances the split across the cards; the
+        # two overrides below are the placement decisions it cannot make.
+        - --n-gpu-layers
+        - all
+        # The 51B n-gram table (tensor per_layer_token_embd) is a lookup, not a
+        # matmul: rows are ~90 bytes and only the rows a token touches are
+        # read. Keep it OUT of VRAM and let the kernel page it in from NVMe
+        # through the memory map. This is the whole reason the model fits.
+        - --override-tensor
+        - per_layer_token_embd=CPU
+        # Routed experts of the first N layers live in host RAM. Budget
+        # (2026-09-20, decimal GB): 68.7 GB VRAM total, ~4 GB per card kept
+        # back for CUDA context, compute buffers and the 64k KV cache, leaving
+        # ~60 GB for weights; Q4_K_XL wants 82.5 GB, so ~23 GB (~14 of 47
+        # expert layers at ~1.64 GB each) goes to the CPU side. The 3700X
+        # computes those experts every token — this is the speed cost of
+        # Q4_K_XL over IQ4_XS, and the FIRST knob to tune from the load log
+        # ("offloaded N/M layers", per-device buffer sizes). Raise it if a
+        # card OOMs at load; lower it if the log shows VRAM headroom.
+        - --n-cpu-moe
+        - '14'
+        - --load-mode
+        - mmap
+        # V100 is SM 7.0: flash attention runs on the generic kernel config
+        # (the sm70-specific head-256 config is still a draft upstream PR,
+        # ggml-org/llama.cpp#27997). It works; it is just not the fast path.
+        - --flash-attn
+        - 'on'
+        - --cache-type-k
+        - q8_0
+        - --cache-type-v
+        - q8_0
+        # 64k: the hermes floor (10-hermes needs >= 64k). The hybrid
+        # DeltaNet/full-attention arch keeps KV small, so this is a first
+        # setting, not a ceiling — raise it once the load log shows the
+        # per-card headroom.
+        - --ctx-size
+        - '65536'
+        - --parallel
+        - '1'
+        - --batch-size
+        - '2048'
+        - --ubatch-size
+        - '512'
+        # One thread per physical core (8). The CPU-side experts are
+        # memory-bound; hyperthreads only add spin-wait.
+        - --threads
+        - '8'
+        - --threads-batch
+        - '8'
+        - --cache-reuse
+        - '256'
+        - --jinja
+        # Unsloth's documented default is xhigh; medium is the balanced
+        # setting. Callers can override per request via chat_template_kwargs.
+        - --chat-template-kwargs
+        - '{"reasoning_effort":"medium"}'
+        # Unsloth's thinking-mode sampling for this model. Instruct-mode
+        # callers (temp 0.7, top_p 0.8, presence 1.5) set their own.
+        - --temp
+        - '1.0'
+        - --top-p
+        - '0.95'
+        - --top-k
+        - '20'
+        - --min-p
+        - '0.0'
+        - --metrics
+        env:
+        # GPU pin: BOTH Tesla V100 32 GB cards, by UUID — never by index, the
+        # index order moves when cards are added or reseated (the 1070 is
+        # GPU 0 while it is installed). The GTX 1070
+        # (GPU-5641c03a-6749-62ab-cd11-fd3cd34d29f4) is deliberately excluded:
+        # 8 GB of Pascal in the split would slow every layer it held.
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: GPU-a69c6398-0353-3234-9f35-af0e02865f33,GPU-08639f1d-0f02-83a5-359b-923f24116259
+        - name: NVIDIA_DRIVER_CAPABILITIES
+          value: compute,utility
+        # The upstream image is built for CUDA < 13 with 70-virtual (PTX) for
+        # Volta, so the first start JIT-compiles every kernel for SM 7.0.
+        # Persist that cache on the host or every pod restart pays it again.
+        - name: CUDA_CACHE_PATH
+          value: /nv-cache
+        - name: CUDA_CACHE_MAXSIZE
+          value: '4294967296'
+        # Upstream ggml-org image, pinned by digest (build b11058, CUDA 12.8.1
+        # base — the host driver is 580.x / CUDA 13, which still RUNS 12.x
+        # binaries; a CUDA 13 toolkit cannot BUILD for Volta at all). A BCI
+        # rebuild via lab-image-build is the path if the draft MTP branch is
+        # wanted; a maintained vendor image is not a base-image deviation.
+        image: ghcr.io/ggml-org/llama.cpp:server-cuda-b11058@sha256:480f67114291c698d2b13097e0e3efdd57e81aa3a9de6720564c307663868a59
+        imagePullPolicy: IfNotPresent
+        name: llama-server
+        ports:
+        - containerPort: 8080
+          name: http
+        # No liveness probe on purpose: a long prompt-processing pass on the
+        # CPU-side layers can take minutes and must not get the pod killed.
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          periodSeconds: 10
+        # Startup is model load (~110 GB through the page cache from NVMe)
+        # plus the one-time PTX JIT. Allow an hour before declaring failure.
+        startupProbe:
+          failureThreshold: 240
+          httpGet:
+            path: /health
+            port: http
+          periodSeconds: 15
+        # No nvidia.com/gpu request ON PURPOSE (the 04-ollama pattern):
+        # requesting the device-plugin resource lets the plugin inject its own
+        # NVIDIA_VISIBLE_DEVICES and possibly hand out GPU 0. GPU access comes
+        # from runtimeClassName: nvidia plus the explicit UUIDs above.
+        # Memory: ~23 GB of CPU-side experts plus page cache for the mmap'd
+        # n-gram table, all of it file-backed and charged to this cgroup. The
+        # limit is well above that so the kernel is never forced to thrash the
+        # map; the node has ~46 GB free with ollama and comfyui parked.
+        resources:
+          limits:
+            cpu: '14'
+            memory: 56Gi
+          requests:
+            cpu: '4'
+            memory: 24Gi
+        volumeMounts:
+        - mountPath: /models
+          name: models
+          readOnly: true
+        - mountPath: /nv-cache
+          name: nv-cache
+      runtimeClassName: nvidia
+      tolerations:
+      - effect: NoSchedule
+        key: nvidia.com/gpu
+        operator: Exists
+      volumes:
+      # hostPath, not a PVC: sdf1 is the only node, the files are 205 GB, and
+      # the memory-mapped n-gram table needs NVMe random-read latency (the
+      # 9100 PRO root pool; Longhorn's disks are SATA SSD and spinning).
+      - hostPath:
+          path: /var/lib/models/qwen3.8-flash-next
+          type: Directory
+        name: models
+      - hostPath:
+          path: /var/lib/models/.nv-cache
+          type: DirectoryOrCreate
+        name: nv-cache
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: llama-server
+  name: llama-server
+  namespace: ai
+spec:
+  # 192.168.7.165 was free in the lan-pool (150-169) on 2026-09-20.
+  # OpenAI-compatible API at http://192.168.7.165:8080/v1, llama.cpp web UI
+  # at /, Prometheus metrics at /metrics.
+  loadBalancerIP: 192.168.7.165
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+  selector:
+    app: llama-server
+  type: LoadBalancer

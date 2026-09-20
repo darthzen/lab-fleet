@@ -168,6 +168,16 @@ persistentVolume:
   # 100Gi, which would have failed or been silently ignored on upgrade.
   size: 200Gi
   storageClass: longhorn
+# PARKED at 0 on 2026-09-20: 26-llama-server runs Qwen3.8-Flash-Next across
+# BOTH V100s (Q4_K_XL needs ~60 GB of VRAM for weights alone), and this chart's
+# 27B holds 35 GiB at 131k ctx — the two cannot be resident together at any
+# quant. Everything above is left intact so restoring is a one-line change:
+# set this to 1 and park 26-llama-server. Fleet is the source of truth for
+# this number — change it here, not with `kubectl scale`.
+# Consumers that pointed at 192.168.7.153:11434 / the exporter proxy
+# (hermes, Karakeep, the doc indexers, lab-memory recall) are being repointed
+# at the llama-server OpenAI-compatible endpoint, 192.168.7.165:8080/v1.
+replicaCount: 0
 runtimeClassName: nvidia
 service:
   loadBalancerIP: 192.168.7.153
