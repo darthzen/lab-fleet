@@ -56,8 +56,9 @@ Only the experts change size, so the experts decide the quant.
 - History (all 2026-09-20): unsloth UD-Q4_K_XL at `--n-cpu-moe 18`,
   `--tensor-split 33,15` — 102 tok/s prompt processing, 22–24 tok/s decode;
   then unsloth UD-IQ4_XS at N=8, 28:20 — 170 tok/s, 27–28 tok/s. Rick found
-  the XS not noticeably more responsive; its files were deleted, XL stays
-  under `/var/lib/models/qwen3.8-flash-next/UD-Q4_K_XL`. The first XL attempt
+  the XS not noticeably more responsive. Both stay on disk under
+  `/var/lib/models/qwen3.8-flash-next/{UD-Q4_K_XL,UD-IQ4_XS}` with their
+  placements recorded here, so any of the three is an args change. The first XL attempt
   (N=14, no tensor split) OOMed card 1 at 37.8 GiB: llama.cpp splits layers
   by count, not bytes.
 - Host RAM: 62 GiB, ~46 GB free with ollama and comfyui parked. The CPU-side

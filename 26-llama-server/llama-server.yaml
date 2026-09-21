@@ -65,9 +65,10 @@ spec:
         # Chosen 2026-09-20 over orcarouter's own GGUF repo, which is gated.
         # History: unsloth UD-Q4_K_XL (--n-cpu-moe 18, --tensor-split 33,15:
         # 102 tok/s pp, 22-24 tok/s tg) then unsloth UD-IQ4_XS (--n-cpu-moe 8,
-        # 28,20: 170 tok/s pp, 27-28 tok/s tg) ran first; Rick found neither
-        # responsive enough to prefer, and the XS files were deleted. XL stays
-        # under /models/qwen3.8-flash-next/UD-Q4_K_XL.
+        # 28,20: 170 tok/s pp, 27-28 tok/s tg) ran first; Rick found the XS
+        # not noticeably more responsive than the XL. Both stay on disk under
+        # /models/qwen3.8-flash-next/{UD-Q4_K_XL,UD-IQ4_XS} — switching back is
+        # an args change (paths and placements above and in README.md).
         - --model
         - /models/qwen3.8-flash-next-uncensored/mradermacher-IQ4_XS/Qwen3.8-Flash-Next-Uncensored.IQ4_XS.gguf
         - --alias
