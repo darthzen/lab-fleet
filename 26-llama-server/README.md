@@ -3,8 +3,9 @@
     kubectl apply -f llama-server.yaml
 
 Upstream `ghcr.io/ggml-org/llama.cpp` `server-cuda` image (pinned by digest)
-serving `unsloth/Qwen3.8-Flash-Next-GGUF` at **UD-IQ4_XS** from a hostPath on
-the 9100 PRO NVMe. GPU access is by `runtimeClassName: nvidia` plus an explicit
+serving `mradermacher/Qwen3.8-Flash-Next-Uncensored-GGUF` at **IQ4_XS** (the
+orcarouter abliteration of Qwen3.8-Flash-Next) from a hostPath on the 9100 PRO
+NVMe (`/var/lib/models`). GPU access is by `runtimeClassName: nvidia` plus an explicit
 `NVIDIA_VISIBLE_DEVICES` pair of UUIDs — **not** a device-plugin
 `nvidia.com/gpu` request, which would let the plugin pick GPUs and could hand
 out the GTX 1070.
@@ -42,15 +43,23 @@ Only the experts change size, so the experts decide the quant.
 
 - VRAM: 2 × 34.4 GB = 68.7 GB. ~4 GB per card held back for CUDA context,
   compute buffers and the 64k q8_0 KV cache → ~60 GB for weights.
-- IQ4_XS wants 64.8 GB on-device (experts + always-on), so ~10.6 GB of
-  experts live in host RAM: `--n-cpu-moe 8` (8 of 48 layers at ~1.19 GB) with
+- This IQ4_XS wants 69.6 GB on-device (experts + always-on; the experts are
+  uniform IQ4_XS/IQ4_NL, ~7 GB more than unsloth's dynamic quant which drops a
+  third of them to IQ3_S), so ~13.2 GB of experts live in host RAM:
+  `--n-cpu-moe 9` (9 of 48 layers at ~1.36-1.52 GB) with
   `--tensor-split 28,20`. Card 0 carries ~5 GiB of KV/compute buffers on top
   of its weights, so it gets the lighter share.
-- History: Q4_K_XL ran first (2026-09-20) at `--n-cpu-moe 18`,
-  `--tensor-split 33,15` — 102 tok/s prompt processing, 22–24 tok/s decode —
-  and the latency showed in use. It stays on disk if quality ever outweighs
-  speed. The first XL attempt (N=14, no tensor split) OOMed card 1 at
-  37.8 GiB: llama.cpp splits layers by count, not bytes.
+- Abliteration (orcarouter, Arditi et al. refusal-direction orthogonalization)
+  touched attention/GDN projections, expert down-projections, shared expert
+  and embeddings; the n-gram table, router and MTP head are untouched. Card
+  reports MMLU −2.3, MMLU-Pro −1.5, GSM8K +1.3 vs base.
+- History (all 2026-09-20): unsloth UD-Q4_K_XL at `--n-cpu-moe 18`,
+  `--tensor-split 33,15` — 102 tok/s prompt processing, 22–24 tok/s decode;
+  then unsloth UD-IQ4_XS at N=8, 28:20 — 170 tok/s, 27–28 tok/s. Rick found
+  the XS not noticeably more responsive; its files were deleted, XL stays
+  under `/var/lib/models/qwen3.8-flash-next/UD-Q4_K_XL`. The first XL attempt
+  (N=14, no tensor split) OOMed card 1 at 37.8 GiB: llama.cpp splits layers
+  by count, not bytes.
 - Host RAM: 62 GiB, ~46 GB free with ollama and comfyui parked. The CPU-side
   experts and the paged-in table rows are all file-backed under `mmap`; the
   56Gi cgroup limit is there so reclaim never thrashes the map.
@@ -76,10 +85,9 @@ Only the experts change size, so the experts decide the quant.
 
 ## Host side
 
-Model files are pulled onto sdf1 by
-`/var/lib/models/qwen3.8-flash-next/download.sh` (resumable `curl`, logs to
-`download.log` alongside). The pod's init container waits until every IQ4_XS
-shard matches its exact byte size from the Hugging Face tree API, so a pod
+Model files are pulled onto sdf1 by a `download.sh` next to each model
+directory under `/var/lib/models` (resumable `curl`, logs to `download.log`
+alongside). The pod's init container waits until the model file matches its exact byte size from the Hugging Face tree API, so a pod
 scheduled before the download finishes simply waits rather than CrashLooping.
 
 The first start also JIT-compiles the image's PTX for SM 7.0 (the CUDA 12.8

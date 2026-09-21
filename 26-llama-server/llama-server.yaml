@@ -25,20 +25,18 @@ spec:
     spec:
       initContainers:
       # Gate on a COMPLETE model download. The GGUFs are pulled onto the host
-      # by /var/lib/models/qwen3.8-flash-next/download.sh (resumable curl, see
-      # README.md); a pod that starts against a half-written shard fails at
-      # load and CrashLoops. Byte sizes are the exact values from the
-      # Hugging Face tree API for unsloth/Qwen3.8-Flash-Next-GGUF, so a file
-      # that is present but short keeps the wait going.
+      # by a download.sh next to each model directory under /var/lib/models
+      # (resumable curl, see README.md); a pod that starts against a
+      # half-written file fails at load and CrashLoops. Byte sizes are the
+      # exact values from the Hugging Face tree API, so a file that is present
+      # but short keeps the wait going.
       - command:
         - /bin/sh
         - -c
         - |
           set -u
           want="
-          UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf 10946624
-          UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00002-of-00003.gguf 49835229856
-          UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00003-of-00003.gguf 43836407744
+          qwen3.8-flash-next-uncensored/mradermacher-IQ4_XS/Qwen3.8-Flash-Next-Uncensored.IQ4_XS.gguf 98421788672
           "
           check() {
             echo "$want" | while read -r f size; do
@@ -57,17 +55,21 @@ spec:
           readOnly: true
       containers:
       - args:
-        # UD-IQ4_XS (unsloth dynamic 4-bit, 94 GB): 59.5 GB routed experts,
-        # 28.8 GB n-gram table (IQ4_NL, never quantized below 4-bit),
-        # ~5.3 GB always-on attention/DeltaNet/shared-expert/embeddings.
-        # Switched from UD-Q4_K_XL on 2026-09-20 after Rick tested it: XL needs
-        # 18 of 48 expert layers on the CPU and measured 102 tok/s prompt
-        # processing / 22-24 tok/s decode, and the latency showed in use. XL
-        # stays on disk (/models/UD-Q4_K_XL, 4 shards, --n-cpu-moe 18,
-        # --tensor-split 33,15) if the quality difference ever matters more.
-        # llama.cpp reads the other shards from the same directory.
+        # mradermacher/Qwen3.8-Flash-Next-Uncensored-GGUF IQ4_XS (98.4 GB, one
+        # file): the orcarouter abliteration of Qwen3.8-Flash-Next (refusal
+        # direction orthogonalized out of attention/GDN projections, expert
+        # down-projections, shared expert and embeddings; n-gram table,
+        # router and MTP head untouched — so the placement below is the same
+        # shape as the base model's). 66.4 GB routed experts at uniform
+        # IQ4_XS/IQ4_NL, 28.8 GB n-gram table (IQ4_NL), ~3.3 GB always-on.
+        # Chosen 2026-09-20 over orcarouter's own GGUF repo, which is gated.
+        # History: unsloth UD-Q4_K_XL (--n-cpu-moe 18, --tensor-split 33,15:
+        # 102 tok/s pp, 22-24 tok/s tg) then unsloth UD-IQ4_XS (--n-cpu-moe 8,
+        # 28,20: 170 tok/s pp, 27-28 tok/s tg) ran first; Rick found neither
+        # responsive enough to prefer, and the XS files were deleted. XL stays
+        # under /models/qwen3.8-flash-next/UD-Q4_K_XL.
         - --model
-        - /models/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
+        - /models/qwen3.8-flash-next-uncensored/mradermacher-IQ4_XS/Qwen3.8-Flash-Next-Uncensored.IQ4_XS.gguf
         - --alias
         - qwen3.8-flash-next
         - --host
@@ -88,20 +90,20 @@ spec:
         # through the memory map. This is the whole reason the model fits.
         - --override-tensor
         - per_layer_token_embd=CPU
-        # Routed experts of the first N layers live in host RAM. IQ4_XS has
-        # 48 layers at ~1.19 GB of experts each (layers 2/4/30/46/47 run 1.61-
-        # 1.78 GB); attention/DeltaNet is ~0.09 GB per layer. N=8 keeps 10.6 GB
-        # of experts on the CPU side and 54.2 GB of weights on the cards.
-        # The 3700X computes those 8 layers' experts every token — the FIRST
-        # knob to tune from nvidia-smi after load. Lower it while both cards
-        # show headroom; raise it if either OOMs at load.
+        # Routed experts of the first N layers live in host RAM. This quant
+        # has 48 layers at ~1.36 GB of experts each (layers 0-5 at 1.52 GB);
+        # attention/DeltaNet is ~0.05 GB per layer. N=9 keeps 13.2 GB of
+        # experts on the CPU side and ~56 GB of weights on the cards. The
+        # 3700X computes those 9 layers' experts every token — the FIRST knob
+        # to tune from nvidia-smi after load. Lower it while both cards show
+        # headroom; raise it if either OOMs at load.
         - --n-cpu-moe
-        - '8'
+        - '9'
         # llama.cpp splits layers across GPUs by COUNT, not bytes, and card 0
         # also carries ~5 GiB of KV/compute buffers (measured on the Q4_K_XL
         # run: 30.0 GiB used for 24.9 GiB of weights, card 1 24.5 for 25.0).
-        # 28:20 gives 26.3 GB of weights on card 0 (8 light + 20 heavy layers)
-        # and 28.0 GB on card 1 (20 heavy layers + output/embeddings). Budget
+        # 28:20 gives 27.3 GB of weights on card 0 (9 light + 19 heavy layers)
+        # and 29.1 GB on card 1 (20 heavy layers + output/embeddings). Budget
         # targets used: card 0 <= 27.5 GB, card 1 <= 30 GB of weights.
         # Recompute this whenever --n-cpu-moe changes: k ≈ N + (48 - N) / 2.
         - --tensor-split
@@ -227,7 +229,9 @@ spec:
       # the memory-mapped n-gram table needs NVMe random-read latency (the
       # 9100 PRO root pool; Longhorn's disks are SATA SSD and spinning).
       - hostPath:
-          path: /var/lib/models/qwen3.8-flash-next
+          # The whole model store, so switching between model directories is
+          # an args change rather than a volume change.
+          path: /var/lib/models
           type: Directory
         name: models
       - hostPath:
