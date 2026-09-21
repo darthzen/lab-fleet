@@ -3,7 +3,7 @@
     kubectl apply -f llama-server.yaml
 
 Upstream `ghcr.io/ggml-org/llama.cpp` `server-cuda` image (pinned by digest)
-serving `unsloth/Qwen3.8-Flash-Next-GGUF` at **UD-Q4_K_XL** from a hostPath on
+serving `unsloth/Qwen3.8-Flash-Next-GGUF` at **UD-IQ4_XS** from a hostPath on
 the 9100 PRO NVMe. GPU access is by `runtimeClassName: nvidia` plus an explicit
 `NVIDIA_VISIBLE_DEVICES` pair of UUIDs — **not** a device-plugin
 `nvidia.com/gpu` request, which would let the plugin pick GPUs and could hand
@@ -42,10 +42,15 @@ Only the experts change size, so the experts decide the quant.
 
 - VRAM: 2 × 34.4 GB = 68.7 GB. ~4 GB per card held back for CUDA context,
   compute buffers and the 64k q8_0 KV cache → ~60 GB for weights.
-- Q4_K_XL wants 82.5 GB on-device (experts + always-on), so ~23 GB of experts
-  live in host RAM: `--n-cpu-moe 14` (≈14 of 47 expert layers at ~1.64 GB).
-  Those layers run on the Ryzen 7 3700X every token; that is the speed cost of
-  this quant over IQ4_XS, which needs only ~4 layers on the CPU.
+- IQ4_XS wants 64.8 GB on-device (experts + always-on), so ~10.6 GB of
+  experts live in host RAM: `--n-cpu-moe 8` (8 of 48 layers at ~1.19 GB) with
+  `--tensor-split 28,20`. Card 0 carries ~5 GiB of KV/compute buffers on top
+  of its weights, so it gets the lighter share.
+- History: Q4_K_XL ran first (2026-09-20) at `--n-cpu-moe 18`,
+  `--tensor-split 33,15` — 102 tok/s prompt processing, 22–24 tok/s decode —
+  and the latency showed in use. It stays on disk if quality ever outweighs
+  speed. The first XL attempt (N=14, no tensor split) OOMed card 1 at
+  37.8 GiB: llama.cpp splits layers by count, not bytes.
 - Host RAM: 62 GiB, ~46 GB free with ollama and comfyui parked. The CPU-side
   experts and the paged-in table rows are all file-backed under `mmap`; the
   56Gi cgroup limit is there so reclaim never thrashes the map.
@@ -54,9 +59,9 @@ Only the experts change size, so the experts decide the quant.
 ## Tuning order, from the load log
 
 1. `--n-cpu-moe` — the first knob. Raise if a card OOMs at load; lower while
-   the log shows per-device headroom. Both quants are on disk; `UD-IQ4_XS`
-   (`/models/UD-IQ4_XS/…-00001-of-00003.gguf`) is the fallback if Q4_K_XL's
-   CPU share makes prompt processing too slow for agent work.
+   nvidia-smi shows per-card headroom, and recompute `--tensor-split` with it
+   (k ≈ N + (48 − N)/2, then check bytes with the per-layer sizes in the GGUF
+   header — the UD quants keep layers 2/4/30/46/47 at higher precision).
 2. `--ctx-size` — 65536 is the hermes floor, not the ceiling; KV on this
    hybrid-attention arch is small.
 3. MTP speculative decoding (`--spec-type draft-mtp -md
@@ -73,7 +78,7 @@ Only the experts change size, so the experts decide the quant.
 
 Model files are pulled onto sdf1 by
 `/var/lib/models/qwen3.8-flash-next/download.sh` (resumable `curl`, logs to
-`download.log` alongside). The pod's init container waits until every Q4_K_XL
+`download.log` alongside). The pod's init container waits until every IQ4_XS
 shard matches its exact byte size from the Hugging Face tree API, so a pod
 scheduled before the download finishes simply waits rather than CrashLooping.
 
