@@ -168,10 +168,13 @@ persistentVolume:
   # 100Gi, which would have failed or been silently ignored on upgrade.
   size: 200Gi
   storageClass: longhorn
-# PARKED at 0 on 2026-09-20: 26-llama-server runs Qwen3.8-Flash-Next across
-# BOTH V100s (Q4_K_XL needs ~60 GB of VRAM for weights alone), and this chart's
-# 27B holds 35 GiB at 131k ctx — the two cannot be resident together at any
-# quant. Everything above is left intact so restoring is a one-line change:
+# PARKED at 0 on 2026-09-20: 26-llama-server takes BOTH V100s. It ran
+# Qwen3.8-Flash-Next (~60 GB of weights) 09-20 to 09-22 and since 2026-09-22
+# serves the same 27B this chart did, uncensored, at 262k f16 KV (~50 GB)
+# with llama.cpp's unified two-slot KV, RAM prompt cache and tunable MTP —
+# the reasons it replaced this chart for the 27B (26-llama-server/README.md).
+# This chart's 27B held 35 GiB at 131k ctx — the two cannot be resident
+# together at any quant. Everything above is left intact so restoring is a one-line change:
 # set this to 1 and park 26-llama-server. Fleet is the source of truth for
 # this number — change it here, not with `kubectl scale`.
 # Consumers that pointed at 192.168.7.153:11434 / the exporter proxy

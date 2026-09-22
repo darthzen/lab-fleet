@@ -1,11 +1,13 @@
-# Fleet bundle — llama.cpp server for Qwen3.8-Flash-Next (raw manifests).
+# Fleet bundle — llama.cpp server (raw manifests). Serving
+# Qwen3.8-27B-Uncensored Q8_0 with MTP since 2026-09-22 (Qwen3.8-Flash-Next
+# 2026-09-20 to 09-22; its quants stay on disk, see README.md).
 # Takes BOTH Tesla V100s by UUID via runtimeClassName: nvidia (NOT the device
-# plugin). The 27B in 04-ollama and ComfyUI in 07-comfyui are declared at 0
-# replicas while this runs — the three cannot share 64 GiB of VRAM. Decided
-# 2026-09-20; see README.md for the memory budget.
+# plugin). Ollama in 04-ollama and ComfyUI in 07-comfyui are declared at 0
+# replicas while this runs — the 27B at 262k f16 KV holds ~50 GB of the
+# 64 GiB and cannot share the cards. Decided 2026-09-20.
 # Model files are a hostPath on the 9100 PRO NVMe (/var/lib/models), not a
-# Longhorn PVC: the n-gram table is memory-mapped and read by 4 KiB page, so it
-# has to sit on a disk that does random reads well.
+# Longhorn PVC: Flash-Next's n-gram table is memory-mapped and read by 4 KiB
+# page, so the store has to sit on a disk that does random reads well.
 defaultNamespace: ai
 
 # Raw-manifest bundle, but Fleet still deploys it via Helm internally — so
