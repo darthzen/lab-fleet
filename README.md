@@ -87,7 +87,7 @@ flowchart TD
 | 06 | Milvus (+ Attu UI) | zilliztech/milvus | chart 5.0.22 (app 2.6.18) |
 | 07 | ComfyUI (+ filebrowser) — scaled to 0 | mmartial/comfyui-nvidia-docker | ubuntu22_cuda12.4.1-latest |
 | 08 | Doc indexers (k8s, SUSE, Logic Pro) | local image + ConfigMap scripts | v2 |
-| 09 | MCP layer (mcpo, k8s/github MCP, docs-rag MCP, fossa-mcp, ollama-code, jev-mcp) | manifests + in-repo source | jev-mcp 0.1.0 (Harbor) |
+| 09 | MCP layer (mcpo, k8s/github MCP, docs-rag MCP, fossa-mcp, ollama-code, jev-mcp) | manifests + in-repo source | jev-mcp 0.1.1 (Harbor) |
 | 10 | Hermes agent (Slack AI agent) | nousresearch/hermes-agent | latest |
 | 11 | Emby media server (GPU transcode) | emby/embyserver | latest |
 | 12 | Node-RED home automation | nodered/node-red | latest |
