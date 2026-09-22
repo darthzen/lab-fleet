@@ -27,6 +27,11 @@ spec:
       labels:
         app: jev-mcp
     spec:
+      # The two mounted files are read by uid 10001; without fsGroup the
+      # projected files are root:root 0440 and the pod crash-loops on
+      # PermissionError (first rollout, 2026-09-22).
+      securityContext:
+        fsGroup: 10001
       containers:
       - env:
         - name: JEV_API_KEY_FILE
