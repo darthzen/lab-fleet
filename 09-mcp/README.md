@@ -18,6 +18,15 @@ ClusterRole/Binding limited to `get`/`list`/`watch`. That RBAC — not the
 container's `--read-only` flag — is what actually makes the server read-only, so
 keep the verbs as they are.
 
+**`fossa-mcp` is DISABLED as of 2026-09-22** — `replicas: 0` in `fossa-mcp.yaml`,
+at Rick's instruction. The Deployment, Service, Ingress and the
+`fossa-mcp.ash4d.com` certificate all still exist; only the pod is gone, so the
+ingress answers 503. Re-enable by setting `replicas` back to `1` and letting
+Fleet sync. The `fossa-mcp-token` Secret was deliberately left in place and has
+NOT been rotated. The `fossa-list`, `fossa-protect` and `fossa-suggest-score`
+skills have no backend while this is off. The separate `fossa-demo` namespace
+(struts, react2shell-app, license-conflict-demo) is untouched and still running.
+
 `fossa-mcp` is read-only software-composition-analysis access to FOSSA (projects,
 revisions, dependencies, licensing/vulnerability/quality issues, attribution
 reports — nine tools, none of which mutate FOSSA state). Own repo:

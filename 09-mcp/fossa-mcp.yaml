@@ -20,7 +20,12 @@ metadata:
   name: fossa-mcp
   namespace: ai
 spec:
-  replicas: 1
+  # Disabled 2026-09-22 at Rick's instruction. Scaled to zero rather than
+  # removed, so the Service, Ingress and the letsencrypt-dns cert for
+  # fossa-mcp.ash4d.com all stay in place; re-enable by setting this back
+  # to 1. While this is 0 the ingress answers 503 and the fossa-list,
+  # fossa-protect and fossa-suggest-score skills have no backend.
+  replicas: 0
   selector:
     matchLabels:
       app: fossa-mcp
