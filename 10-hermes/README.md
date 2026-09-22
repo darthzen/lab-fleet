@@ -9,7 +9,10 @@
     kubectl -n hermes create secret generic hermes-webui \
       --from-literal=password="$(openssl rand -base64 24)"     # see .example file
     kubectl -n hermes create secret generic hermes-jev \
-      --from-file=api_key=$HOME/Developer/keys/jev/claude.key   # TypeSafe/Jev, 2026-09-22
+      --from-literal=api_key="$(tr -d '\n' < $HOME/Developer/keys/jev/claude.key)"  # TypeSafe/Jev
+    # NOT --from-file: the key file ends in a newline, and the hermes-webui
+    # init script re-reads its environment line by line and dies on the empty
+    # line ("invalid variable name"), crash-looping the UI (2026-09-22).
     kubectl apply -f hermes.yaml
 
 Self-hosted agentic AI (`nousresearch/hermes-agent`) with a Slack front-end —
