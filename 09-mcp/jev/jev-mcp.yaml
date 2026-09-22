@@ -1,0 +1,135 @@
+# jev-mcp — TypeSafe Jev (System One) as an MCP server. One tool, `evaluate`,
+# whose body is exactly POST /v1/systemone. Source: github.com/darthzen/jev-mcp.
+#
+# Image is built in-cluster by the lab-image-build skill (kaniko → Harbor):
+#   ~/.claude/skills/lab-image-build/scripts/kaniko-build.sh \
+#     --repo darthzen/jev-mcp --image jev-mcp --tag 0.1.0
+# so it needs the harbor-pull imagePullSecret (out-of-band, not in this repo).
+#
+# The `jev-mcp` Secret (api_key, path_secret) is created out-of-band — see
+# jev-mcp.secret.example.yaml.txt. Both values are mounted as FILES, not env:
+# the server reads *_FILE and strips whitespace, so a trailing newline in the
+# key file cannot break anything (cf. the hermes-webui incident, 10-hermes).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: jev-mcp
+  name: jev-mcp
+  namespace: ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jev-mcp
+  template:
+    metadata:
+      labels:
+        app: jev-mcp
+    spec:
+      containers:
+      - env:
+        - name: JEV_API_KEY_FILE
+          value: /etc/jev/api_key
+        - name: JEV_MCP_PATH_SECRET_FILE
+          value: /etc/jev/path_secret
+        - name: JEV_MODEL
+          value: jev-latest
+        image: registry.ash4d.com/ash4d-lab/jev-mcp:0.1.0
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        name: server
+        ports:
+        - containerPort: 8080
+          name: mcp
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 3
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 250m
+            memory: 256Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 10001
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+        - mountPath: /etc/jev
+          name: jev
+          readOnly: true
+        - mountPath: /tmp
+          name: tmp
+      imagePullSecrets:
+      - name: harbor-pull
+      volumes:
+      - name: jev
+        secret:
+          secretName: jev-mcp
+          defaultMode: 0440
+      - emptyDir: {}
+        name: tmp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: jev-mcp
+  name: jev-mcp
+  namespace: ai
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+  selector:
+    app: jev-mcp
+  type: ClusterIP
+---
+# jev-mcp.ash4d.com is a proxied CNAME to the ash4d-home tunnel; cloudflared
+# hands the host to Traefik (23-cloudflare-tunnel/cloudflared.configmap.yaml),
+# and this Ingress routes it here. The whole host is routed, not just /mcp,
+# because the MCP path is /<secret>/mcp and the secret is not written down in
+# git; the server 404s everything except that path and /healthz.
+#
+# TLS here only matters for direct LAN access (Cloudflare terminates the public
+# edge and the tunnel leg into Traefik is plain HTTP on the cluster network).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-dns
+  labels:
+    app: jev-mcp
+  name: jev-mcp
+  namespace: ai
+spec:
+  rules:
+  - host: jev-mcp.ash4d.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: jev-mcp
+            port:
+              number: 8080
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - jev-mcp.ash4d.com
+    secretName: jev-mcp-ash4d-tls

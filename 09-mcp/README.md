@@ -84,3 +84,37 @@ the cluster: same Milvus-backed retrieval, but streamable-HTTP MCP instead of
 OpenAPI, so external Claude/Cowork sessions can use it directly as well as
 through mcpo. Companion repo: darthzen/ollama-code-mcp (Claude Code
 → Ollama delegation; runs stdio on the client, no cluster deployment needed).
+
+## jev-mcp — TypeSafe Jev (System One) for Claude Desktop / claude.ai
+
+`jev/` is its own bundle (nested fleet.yaml, like `ollama-code/`). Own repo:
+github.com/darthzen/jev-mcp, Apache-2.0. One tool, `evaluate`, whose body is
+exactly `POST /v1/systemone` — the same contract as `~/.claude/tools/jev.py`
+and the Hermes skill, so every client asks Jev the same way. Jev itself picked
+the design (build our own over the community stdio servers 0.98, single tool
+1.0, capability URL 0.97, this directory 0.86, kaniko→Harbor 1.0, the hostname
+0.99), 2026-09-22.
+
+    kubectl -n ai create secret generic jev-mcp \
+      --from-file=api_key=$HOME/Developer/keys/jev/claude.key \
+      --from-file=path_secret=$HOME/Developer/keys/jev/mcp-path-secret
+    ~/.claude/skills/lab-image-build/scripts/kaniko-build.sh \
+      --repo darthzen/jev-mcp --image jev-mcp --tag 0.1.0
+
+**This is the one MCP server in the repo that IS on the Cloudflare tunnel**
+(`23-cloudflare-tunnel`, hostname `jev-mcp.ash4d.com`, proxied CNAME to the
+tunnel). claude.ai custom connectors accept OAuth or nothing — no static bearer
+header — and Cloudflare Access blocks them outright, so the compensating
+control is the URL: the endpoint is `/<48-hex secret>/mcp`, everything else is
+404, and the server's access log is off so the path never lands in pod logs.
+The full URL is a credential; it lives in `~/Developer/keys/jev/` and nowhere
+in git. Worst case if it leaks: someone spends Jev credits (~$0.0004 per
+decision). The pod holds the Jev key and nothing else.
+
+Clients (substitute the secret from `~/Developer/keys/jev/mcp-path-secret`):
+
+    claude mcp add --transport http --scope user jev https://jev-mcp.ash4d.com/<secret>/mcp
+    # claude.ai and Claude Desktop: Settings → Connectors → Add custom connector → that URL, leave OAuth blank
+    # Claude Desktop fallback if its connector flow insists on OAuth:
+    "jev": { "command": "npx", "args": ["-y", "mcp-remote", "https://jev-mcp.ash4d.com/<secret>/mcp"] }
+

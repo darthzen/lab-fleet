@@ -1,0 +1,27 @@
+# Fleet bundle — jev-mcp (raw manifests): TypeSafe Jev (System One) as an MCP
+# server, so Claude Desktop, claude.ai and Claude Code can consult Jev under
+# Rick's standing rule (2026-09-22) that every decision goes through Jev.
+#
+# Own repo: github.com/darthzen/jev-mcp (Apache-2.0). One tool, `evaluate`,
+# mirroring POST /v1/systemone exactly — the same contract as ~/.claude/tools/
+# jev.py and the Hermes skill. Server, image and exposure were all picked by
+# Jev itself (build_own 0.98, single tool 1.0, capability URL 0.97,
+# 09-mcp subdir 0.86, kaniko→Harbor 1.0, jev-mcp.ash4d.com 0.99).
+#
+# THIS IS THE ONE MCP SERVER IN THE REPO THAT IS ON THE CLOUDFLARE TUNNEL.
+# Every other MCP host here is a public A record pointing at the private
+# Traefik VIP, reachable from the LAN only. Rick asked for tunnel exposure so
+# claude.ai (which cannot send a static bearer header and is blocked by
+# Cloudflare Access) can reach it. The compensating control is the URL: the
+# MCP endpoint is /<random 48-hex secret>/mcp and every other path is 404, so
+# the full URL is the credential. Worst case if it leaks: someone spends Jev
+# credits (~$0.0004 per decision). The pod holds the Jev key and nothing else.
+#
+# Nested under 09-mcp with its own fleet.yaml, so Fleet treats it as its own
+# bundle (lab-ai-09-mcp-jev) and no GitRepo change is needed — same mechanism
+# as 09-mcp/ollama-code. The `jev-mcp` Secret (api_key + path_secret) is
+# created out-of-band; see jev-mcp.secret.example.yaml.txt and README.
+defaultNamespace: ai
+
+helm:
+  takeOwnership: true
