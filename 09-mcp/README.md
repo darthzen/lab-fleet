@@ -99,7 +99,7 @@ the design (build our own over the community stdio servers 0.98, single tool
       --from-file=api_key=$HOME/Developer/keys/jev/claude.key \
       --from-file=path_secret=$HOME/Developer/keys/jev/mcp-path-secret
     ~/.claude/skills/lab-image-build/scripts/kaniko-build.sh \
-      --repo darthzen/jev-mcp --image jev-mcp --tag 0.1.1
+      --repo darthzen/jev-mcp --image jev-mcp --tag 0.1.2
 
 **This is the one MCP server in the repo that IS on the Cloudflare tunnel**
 (`23-cloudflare-tunnel`, hostname `jev-mcp.ash4d.com`, proxied CNAME to the
