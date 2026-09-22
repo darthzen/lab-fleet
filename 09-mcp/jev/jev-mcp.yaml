@@ -3,7 +3,7 @@
 #
 # Image is built in-cluster by the lab-image-build skill (kaniko → Harbor):
 #   ~/.claude/skills/lab-image-build/scripts/kaniko-build.sh \
-#     --repo darthzen/jev-mcp --image jev-mcp --tag 0.1.1
+#     --repo darthzen/jev-mcp --image jev-mcp --tag 0.1.2
 # so it needs the harbor-pull imagePullSecret (out-of-band, not in this repo).
 #
 # The `jev-mcp` Secret (api_key, path_secret) is created out-of-band — see
@@ -45,7 +45,7 @@ spec:
           value: /etc/jev/path_secret
         - name: JEV_MODEL
           value: jev-latest
-        image: registry.ash4d.com/ash4d-lab/jev-mcp:0.1.1
+        image: registry.ash4d.com/ash4d-lab/jev-mcp:0.1.2
         imagePullPolicy: IfNotPresent
         livenessProbe:
           httpGet:
