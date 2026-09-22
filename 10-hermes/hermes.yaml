@@ -129,6 +129,17 @@ spec:
             secretKeyRef:
               key: password
               name: hermes-webui
+        # Jev key for the UI as well. The UI runs its own copy of the agent
+        # off the shared volume, so chats through it never saw the agent
+        # container's JEV_API_KEY: on 2026-09-22 Qwen in the web UI reported
+        # it "could not read the hermes-jev Secret" and went hunting for the
+        # key. The UI's env loader only obfuscates *KEY* names in its log;
+        # the value itself passes through to the agent process.
+        - name: JEV_API_KEY
+          valueFrom:
+            secretKeyRef:
+              key: api_key
+              name: hermes-jev
         - name: HERMES_WEBUI_STATE_DIR
           value: /home/hermeswebui/.hermes/webui
         - name: HERMES_NIX_BUILD
