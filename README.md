@@ -100,7 +100,7 @@ flowchart TD
 | 23 | Cloudflare tunnel (cloudflared) | raw manifests | cloudflare/cloudflared:2026.7.3 |
 | 24 | OpenAI tunnel-client → mempalace MCP | raw manifests | tunnel-client v0.0.11 |
 | 25 | Firecrawl self-hosted crawl/scrape API | raw manifests (upstream k8s example, adapted) | 2.11.227 |
-| 26 | llama.cpp server — Qwen3.8-Flash-Next on both V100s | ghcr.io/ggml-org/llama.cpp server-cuda | b11058 (CUDA 12.8.1) |
+| 26 | llama.cpp server — Qwen3.8-27B-Uncensored Q8_0 + MTP on both V100s (Flash-Next parked on disk) | ghcr.io/ggml-org/llama.cpp server-cuda | b11058 (CUDA 12.8.1) |
 
 ### Directory numbers 15+ are append-order, not install-order
 

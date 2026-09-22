@@ -66,6 +66,16 @@ spec:
             secretKeyRef:
               key: SLACK_ALLOWED_USERS
               name: hermes-slack
+        # Jev (TypeSafe System One) — Rick's standing rule since 2026-09-22:
+        # hermes consults Jev for every decision, whatever model it runs on.
+        # The skill at /opt/data/skills/decisions/jev on the PVC reads this;
+        # the Secret is created by hand (README), never committed. Chosen over
+        # a line in /opt/data/.env so the key survives a PVC rebuild.
+        - name: JEV_API_KEY
+          valueFrom:
+            secretKeyRef:
+              key: api_key
+              name: hermes-jev
         # Pinned 2026-09-12 to the 2026-09-06 build, the last one that ran before
         # the move. v0.21.2 (2026-09-11) resolves the 'ollama' provider alias to
         # 'custom', so the webui builds the route hint
