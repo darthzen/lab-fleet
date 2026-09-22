@@ -111,10 +111,20 @@ The full URL is a credential; it lives in `~/Developer/keys/jev/` and nowhere
 in git. Worst case if it leaks: someone spends Jev credits (~$0.0004 per
 decision). The pod holds the Jev key and nothing else.
 
+**IP restriction (2026-09-22, design by Jev):** two names, one Service.
+`jev-mcp.ash4d.com` (proxied, via the tunnel) is for claude.ai only — a
+Cloudflare WAF custom rule on that host blocks everything outside Anthropic's
+egress ranges `160.79.104.0/21` and `2607:6bc0::/48` (rule lives in Cloudflare,
+like DNS). `jev-mcp-lan.ash4d.com` is a dns-only A record to the Traefik VIP
+`192.168.7.150` for the LAN and the tailnet; it never touches Cloudflare. The
+`jev-mcp-allow` Traefik middleware admits only `192.168.7.0/24`, `100.64.0.0/10`
+and the pod CIDR cloudflared connects from, on both names.
+
 Clients (substitute the secret from `~/Developer/keys/jev/mcp-path-secret`):
 
-    claude mcp add --transport http --scope user jev https://jev-mcp.ash4d.com/<secret>/mcp
-    # claude.ai and Claude Desktop: Settings → Connectors → Add custom connector → that URL, leave OAuth blank
+    # Rick's machines (LAN or tailnet) — Claude Code and Claude Desktop:
+    claude mcp add --transport http --scope user jev https://jev-mcp-lan.ash4d.com/<secret>/mcp
+    # claude.ai only: Settings → Connectors → Add custom connector → https://jev-mcp.ash4d.com/<secret>/mcp, leave OAuth blank
     # Claude Desktop fallback if its connector flow insists on OAuth:
-    "jev": { "command": "npx", "args": ["-y", "mcp-remote", "https://jev-mcp.ash4d.com/<secret>/mcp"] }
+    "jev": { "command": "npx", "args": ["-y", "mcp-remote", "https://jev-mcp-lan.ash4d.com/<secret>/mcp"] }
 

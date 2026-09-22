@@ -110,19 +110,49 @@ spec:
     app: jev-mcp
   type: ClusterIP
 ---
-# jev-mcp.ash4d.com is a proxied CNAME to the ash4d-home tunnel; cloudflared
-# hands the host to Traefik (23-cloudflare-tunnel/cloudflared.configmap.yaml),
-# and this Ingress routes it here. The whole host is routed, not just /mcp,
-# because the MCP path is /<secret>/mcp and the secret is not written down in
-# git; the server 404s everything except that path and /healthz.
+# Two hostnames, one Service, two audiences (design picked by Jev 2026-09-22,
+# edge_waf_plus_lan_hostname 0.95):
 #
-# TLS here only matters for direct LAN access (Cloudflare terminates the public
-# edge and the tunnel leg into Traefik is plain HTTP on the cluster network).
+#   jev-mcp.ash4d.com      proxied CNAME -> Cloudflare tunnel -> cloudflared ->
+#                          Traefik. For claude.ai ONLY: a Cloudflare WAF custom
+#                          rule on this host blocks every source outside
+#                          Anthropic's egress ranges (160.79.104.0/21,
+#                          2607:6bc0::/48). That rule lives in Cloudflare, like
+#                          the DNS records, not in this repo.
+#   jev-mcp-lan.ash4d.com  dns-only A -> 192.168.7.150 (Traefik VIP). For the
+#                          LAN and the tailnet (sdf1 advertises 192.168.7.0/24),
+#                          never through Cloudflare. Claude Code and Claude
+#                          Desktop on Rick's machines use this name.
+#
+# The jev-mcp-allow middleware below is the second layer: whichever name is
+# used, Traefik only admits the LAN, the tailnet CGNAT range, and the pod CIDR
+# cloudflared connects from. Anything else that somehow reaches the VIP is 403.
+#
+# The whole host is routed, not just /mcp, because the MCP path is
+# /<secret>/mcp and the secret is not written down in git; the server 404s
+# everything except that path and /healthz.
+#
+# TLS: cert-manager issues one cert for both names; it matters for the -lan
+# path (clients connect to the VIP directly). Cloudflare terminates the public
+# edge and the tunnel leg into Traefik is plain HTTP on the cluster network.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: jev-mcp-allow
+  namespace: ai
+spec:
+  ipAllowList:
+    sourceRange:
+    - 192.168.7.0/24    # lab LAN
+    - 100.64.0.0/10     # Tailscale CGNAT range (tailnet devices via the subnet route)
+    - 10.42.0.0/24      # k3s pod CIDR on sdf1: cloudflared, the tunnel side
+---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-dns
+    traefik.ingress.kubernetes.io/router.middlewares: ai-jev-mcp-allow@kubernetescrd
   labels:
     app: jev-mcp
   name: jev-mcp
@@ -139,7 +169,18 @@ spec:
               number: 8080
         path: /
         pathType: Prefix
+  - host: jev-mcp-lan.ash4d.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: jev-mcp
+            port:
+              number: 8080
+        path: /
+        pathType: Prefix
   tls:
   - hosts:
     - jev-mcp.ash4d.com
+    - jev-mcp-lan.ash4d.com
     secretName: jev-mcp-ash4d-tls
