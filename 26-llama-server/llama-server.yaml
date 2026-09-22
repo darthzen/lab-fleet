@@ -89,10 +89,9 @@ spec:
         # 19.9 / 21.1 GiB at 131k (2026-09-03).
         - --tensor-split
         - '30,35'
-        # layer (default) is the baseline. `row` parallelizes each layer across
-        # both cards and can lift decode on a dense model, but the V100s are
-        # PCIe (PHB, no NVLink) so the per-layer sync may cost more than it
-        # buys — an A/B to run, not an assumption. Numbers in README.md.
+        # layer is the only option on this build: `row` fails at load on
+        # b11058 with "device CUDA0 does not support split buffers" (tried
+        # 2026-09-22). Numbers for the configs that do run are in README.md.
         - --split-mode
         - layer
         - --load-mode
@@ -142,9 +141,10 @@ spec:
         - '8'
         # MTP speculative decoding off the model's own block-64 head (merged
         # upstream in PR #22673, 2026-05-16; this build has it). Unsloth:
-        # start at 2, try 1-6 — the optimum is hardware-specific. Low-temp
-        # sampling (below) raises acceptance. Ollama's tag ran MTP too, with a
-        # fixed draft depth. Reported range for dense 27B: 1.4-1.7x decode.
+        # start at 2, try 1-6 — the optimum is hardware-specific. Measured
+        # 2026-09-22 (README.md): depth 2 = 48-50 tok/s decode at 12k ctx with
+        # 75-83% acceptance; depth 4 drops acceptance to ~59% and halves
+        # decode at 39k ctx; MTP off = 17-21 tok/s. Keep 2.
         - --spec-type
         - draft-mtp
         - --spec-draft-n-max

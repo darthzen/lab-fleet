@@ -77,17 +77,32 @@ done on this box — the Ollama tag ran the base model.
   cache is up to 16 GiB anonymous. Pod limit 40Gi.
 - The GTX 1070 (8 GB, Pascal) is deliberately excluded from the pin.
 
-## Measurements
+## Measurements (2026-09-22, first load)
 
-Filled in after the first load on 2026-09-22 (see the load log for the KV
-line and `nvidia-smi` for per-card use). Benchmarks are `/v1/chat/completions`
-`timings` on a warm slot:
+Load log: `n_slots = 2, n_ctx_slot = 262144, kv_unified = true`, MTP draft
+context created against the target model. Model load is under a minute when
+the file is in page cache. `nvidia-smi` after load, KV pre-allocated for the
+full 262k pool: **card 0 21.3 GiB, card 1 28.3 GiB** (49.6 GiB total — the
+~50 GB estimate held, but the derivation put too much on card 0; card 1 also
+carries the output head, the MTP block and their compute). Both cards have
+headroom, so the 30:35 split stays; move 2–3 layers to card 0 only if card 1
+ever climbs past ~30 GiB.
 
-| Config | pp tok/s | tg tok/s | card 0 / card 1 GiB |
-|---|---|---|---|
-| layer split, MTP n-max 2 | _pending_ | _pending_ | _pending_ |
-| layer split, MTP off | _pending_ | _pending_ | |
-| row split, MTP n-max 2 | _pending_ | _pending_ | |
+`/v1/chat/completions` `timings`, precise sampling, `reasoning_effort: low`,
+256 generated tokens, prompts of 11.7k and 39k tokens:
+
+| Config | pp tok/s @ 11.7k | tg tok/s @ 11.7k | pp @ 39k | tg @ 39k | draft accepted |
+|---|---|---|---|---|---|
+| **layer split, MTP n-max 2 (current)** | **975** | **48–50** | **815** | **36.6** | 75–83 %, mean 2.5–2.7 tok/step |
+| layer split, MTP n-max 4 | 950–958 | 44–50 | 731 | 24.0 | ~59 % |
+| layer split, MTP off | 1111–1117 | 17.5–21.1 | 855 | 12.6 | — |
+| row split, MTP n-max 2 | — | — | — | — | **does not load** on b11058: `device CUDA0 does not support split buffers` |
+
+MTP is worth **2.4–2.9× on decode** for ~13 % of prompt-processing speed.
+Depth 4 drafts more than the model accepts and loses at long context. Row
+split is not available in this build's CUDA backend, so layer split is not a
+choice. For scale: Flash-Next (uncensored IQ4_XS) measured 220 pp / 33–34 tg
+on the same cards; Ollama was never benchmarked on this 27B tag.
 
 ## Tuning order
 
