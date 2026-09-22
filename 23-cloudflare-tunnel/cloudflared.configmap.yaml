@@ -21,4 +21,9 @@ data:
       # Ollama has no Ingress — straight to its LoadBalancer VIP.
       - hostname: ollama.ash4d.com
         service: http://192.168.7.153:11434
+      # jev-mcp (09-mcp/jev): the one MCP server deliberately on the tunnel so
+      # claude.ai can reach it. Its URL secret is the credential; see the
+      # bundle's fleet.yaml. Routed via Traefik's Ingress like buzz.
+      - hostname: jev-mcp.ash4d.com
+        service: http://traefik.kube-system.svc.cluster.local:80
       - service: http_status:404
