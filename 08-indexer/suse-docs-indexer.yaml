@@ -73,6 +73,7 @@ spec:
               sizeLimit: 8Gi
             name: work
   schedule: 0 4 * * 0
+  suspend: true  # 2026-09-24: Milvus is scaled to zero (deliberate); every run fails. Re-enable with Milvus.
   startingDeadlineSeconds: 600
   successfulJobsHistoryLimit: 3
 ---
