@@ -19,6 +19,10 @@
     kubectl -n hermes create secret generic hermes-ssh \
       --from-file=id_ed25519=$HOME/Developer/keys/hermes/id_ed25519 \
       --from-file=known_hosts=$HOME/Developer/keys/hermes/known_hosts
+    # Rick's ~/Developer/keys, mounted at /etc/hermes-keys/<service>/<file>.
+    # Not created by hand: the laptop's launchd hook pushes it on every write
+    # and verifies it (github.com/darthzen/hermes-image, laptop/install.sh).
+    # The keys-tree sidecar tolerates it being absent.
     # Images come from Harbor (github.com/darthzen/hermes-image), so the
     # namespace needs the pull secret, copied from ai:
     kubectl -n ai get secret harbor-pull -o json \
