@@ -13,6 +13,17 @@
     # NOT --from-file: the key file ends in a newline, and the hermes-webui
     # init script re-reads its environment line by line and dies on the empty
     # line ("invalid variable name"), crash-looping the UI (2026-09-22).
+    # ssh key for the lab hosts. --from-file is correct here: these are mounted
+    # as files, not env vars. The ssh-key init container copies them into an
+    # emptyDir owned by uid 10000 with mode 0600, which ssh requires.
+    kubectl -n hermes create secret generic hermes-ssh \
+      --from-file=id_ed25519=$HOME/Developer/keys/hermes/id_ed25519 \
+      --from-file=known_hosts=$HOME/Developer/keys/hermes/known_hosts
+    # Images come from Harbor (github.com/darthzen/hermes-image), so the
+    # namespace needs the pull secret, copied from ai:
+    kubectl -n ai get secret harbor-pull -o json \
+      | jq '{apiVersion,kind,type,data,metadata:{name:.metadata.name,namespace:"hermes"}}' \
+      | kubectl apply -f -
     kubectl apply -f hermes.yaml
 
 Self-hosted agentic AI (`nousresearch/hermes-agent`) with a Slack front-end —
