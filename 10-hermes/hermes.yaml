@@ -95,7 +95,7 @@ spec:
         # Since 2026-09-25 this is the upstream digest above rebuilt with the
         # ash4d toolbelt (github.com/darthzen/hermes-image, Dockerfile.agent).
         # Upgrading = bump ARG UPSTREAM there, rebuild, then update both refs.
-        image: registry.ash4d.com/ash4d-lab/hermes-agent:0.21.5-ash4d.1@sha256:6541247d10261545a31550034894da9e0251df40b2293ba7e78ec09780afce64
+        image: registry.ash4d.com/ash4d-lab/hermes-agent:0.21.5-ash4d.2@sha256:19600d20eb8f8ce3d7136210fd7c195d8349c92b84bd631000c046ca321fccce
         imagePullPolicy: Always
         name: hermes-agent
         ports:
@@ -168,7 +168,7 @@ spec:
         # Rebuilt with the toolbelt (hermes-image, Dockerfile.webui). That image
         # pre-builds /app/venv owned by 10000:10000 — keep WANTED_UID/GID above
         # at 10000 or the venv is unwritable at startup.
-        image: registry.ash4d.com/ash4d-lab/hermes-webui:0.52.379-ash4d.1@sha256:492c0e25198354b093a2093e6c76ca0dd855115378ae6f9565966caaac2a36c3
+        image: registry.ash4d.com/ash4d-lab/hermes-webui:0.52.379-ash4d.2@sha256:804f7b1d5bac1c53f97cfa146ac0b75b73f41c9e1c012806dfc7fd9b9482b89e
         imagePullPolicy: Always
         name: hermes-webui
         ports:
@@ -214,7 +214,7 @@ spec:
         - sh
         - -c
         - cp -a /opt/hermes/. /agent-src/ && echo agent-source-copied
-        image: registry.ash4d.com/ash4d-lab/hermes-agent:0.21.5-ash4d.1@sha256:6541247d10261545a31550034894da9e0251df40b2293ba7e78ec09780afce64
+        image: registry.ash4d.com/ash4d-lab/hermes-agent:0.21.5-ash4d.2@sha256:19600d20eb8f8ce3d7136210fd7c195d8349c92b84bd631000c046ca321fccce
         imagePullPolicy: Always
         name: copy-agent-src
         volumeMounts:
