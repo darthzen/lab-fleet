@@ -24,6 +24,13 @@ spec:
       labels:
         app: hermes-agent
     spec:
+      # cluster-admin (Rick, 2026-09-25) so kubectl works in-cluster from both
+      # containers instead of ssh to sdf1. The API on 8642 is on the LAN LB with
+      # an unsandboxed terminal: anyone holding API_SERVER_KEY holds this role.
+      serviceAccountName: hermes-agent
+      automountServiceAccountToken: true
+      imagePullSecrets:
+      - name: harbor-pull
       containers:
       - command:
         - hermes
@@ -85,7 +92,10 @@ spec:
         # Keep a colon out of model names, or the webui truncates them again.
         # Keep this digest and the copy-agent-src one below in step; the webui
         # runs this source tree.
-        image: docker.io/nousresearch/hermes-agent@sha256:fca358f12efd65bfaaca05884166f15c0e2788375ca30d77061ac1ebc96452b7
+        # Since 2026-09-25 this is the upstream digest above rebuilt with the
+        # ash4d toolbelt (github.com/darthzen/hermes-image, Dockerfile.agent).
+        # Upgrading = bump ARG UPSTREAM there, rebuild, then update both refs.
+        image: registry.ash4d.com/ash4d-lab/hermes-agent:0.21.5-ash4d.1@sha256:6541247d10261545a31550034894da9e0251df40b2293ba7e78ec09780afce64
         imagePullPolicy: Always
         name: hermes-agent
         ports:
@@ -109,6 +119,9 @@ spec:
         # must become an NFS PV (the export already exists in /etc/exports).
         - mountPath: /data
           name: lab-data
+        - mountPath: /etc/hermes-ssh
+          name: ssh
+          readOnly: true
       # The UI runs as uid 10000 (hence the fix-perms init container) and wants
       # the agent's source tree on disk to introspect it — supplied by the
       # copy-agent-src init container via the agent-src emptyDir.
@@ -152,7 +165,10 @@ spec:
         # splits @provider:model with rsplit(':', 1), so a colon INSIDE the model
         # name (qwen3.8:27b-...) is still truncated. Safe now only because the
         # model name on the PVC carries no colon; see the agent note above.
-        image: ghcr.io/nesquena/hermes-webui@sha256:daa38097ab602e4e7af757a8b1f2e3107ae50074634ff6fa58b8db830ee9da13
+        # Rebuilt with the toolbelt (hermes-image, Dockerfile.webui). That image
+        # pre-builds /app/venv owned by 10000:10000 — keep WANTED_UID/GID above
+        # at 10000 or the venv is unwritable at startup.
+        image: registry.ash4d.com/ash4d-lab/hermes-webui:0.52.379-ash4d.1@sha256:492c0e25198354b093a2093e6c76ca0dd855115378ae6f9565966caaac2a36c3
         imagePullPolicy: Always
         name: hermes-webui
         ports:
@@ -174,6 +190,10 @@ spec:
         # Same /data pool as the agent, same path, so file references match.
         - mountPath: /data
           name: lab-data
+        # WebUI chats run their terminal here, so it needs the key too.
+        - mountPath: /etc/hermes-ssh
+          name: ssh
+          readOnly: true
       initContainers:
       # The PVC is created root-owned; hermes-webui runs as 10000 and cannot
       # write its state dir without this.
@@ -194,12 +214,33 @@ spec:
         - sh
         - -c
         - cp -a /opt/hermes/. /agent-src/ && echo agent-source-copied
-        image: docker.io/nousresearch/hermes-agent@sha256:fca358f12efd65bfaaca05884166f15c0e2788375ca30d77061ac1ebc96452b7
+        image: registry.ash4d.com/ash4d-lab/hermes-agent:0.21.5-ash4d.1@sha256:6541247d10261545a31550034894da9e0251df40b2293ba7e78ec09780afce64
         imagePullPolicy: Always
         name: copy-agent-src
         volumeMounts:
         - mountPath: /agent-src
           name: agent-src
+      # ssh refuses a group-readable key, and a Secret volume cannot set an
+      # owner. Copy the key into an emptyDir owned by 10000 (both containers
+      # run as 10000) with 0600. /etc/ssh/ssh_config.d/hermes.conf in the
+      # image points ssh at /etc/hermes-ssh.
+      - command:
+        - sh
+        - -c
+        - >-
+          cp /ssh-secret/id_ed25519 /ssh-secret/known_hosts /ssh/ &&
+          chown 10000:10000 /ssh/* && chmod 0600 /ssh/id_ed25519 &&
+          chmod 0644 /ssh/known_hosts && echo ssh-key-staged
+        image: busybox:1.36
+        name: ssh-key
+        securityContext:
+          runAsUser: 0
+        volumeMounts:
+        - mountPath: /ssh-secret
+          name: ssh-secret
+          readOnly: true
+        - mountPath: /ssh
+          name: ssh
       volumes:
       - name: data
         persistentVolumeClaim:
@@ -210,6 +251,31 @@ spec:
         hostPath:
           path: /data
           type: Directory
+      - name: ssh-secret
+        secret:
+          secretName: hermes-ssh
+      - emptyDir:
+          medium: Memory
+        name: ssh
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hermes-agent
+  namespace: hermes
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: hermes-agent-cluster-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: hermes-agent
+  namespace: hermes
 ---
 apiVersion: v1
 kind: Service
