@@ -125,20 +125,25 @@ spec:
         - --cache-type-v
         - f16
         # Native maximum. With --kv-unified this is ONE 262k pool shared by
-        # both slots (not 262k each): a lone Hermes turn can use all of it,
-        # and two concurrent clients share it. Ollama reserves a full window
+        # all slots (not 262k each): a lone Hermes turn can use all of it,
+        # and concurrent clients share it. Ollama reserves a full window
         # per slot, which is why 04-ollama ran one slot and queued.
+        # 5 slots since 2026-10-28: one main agent thread plus four
+        # sub-agents run at once instead of the 3rd+ queueing. Extra slots
+        # cost no VRAM up front with the unified pool.
         - --ctx-size
         - '262144'
         - --parallel
-        - '2'
+        - '5'
         - --kv-unified
         # Prompt cache in host RAM: when a slot is handed to another client
-        # its KV state is parked (up to 16 GiB) and restored on the next turn
+        # its KV state is parked (up to 32 GiB) and restored on the next turn
         # instead of re-processing the prefix. Ollama recomputes. Anonymous
-        # memory — the cgroup limit below covers it.
+        # memory — the cgroup limit below covers it. 16 -> 32 GiB on
+        # 2026-10-28 with --parallel 5 (more slots parking state); the node
+        # had ~37 GiB available, ~10 GiB anonymous use outside this pod.
         - --cache-ram
-        - '16384'
+        - '32768'
         # --cache-reuse 256 removed 2026-10-28: b11058 logs "cache_reuse is not
         # supported by this context, it will be disabled" for this hybrid model
         # with MTP, so the flag did nothing.
@@ -252,12 +257,14 @@ spec:
         # from runtimeClassName: nvidia plus the explicit UUIDs above.
         # Memory: the weights are on the GPUs; host RAM holds the mmap page
         # cache for the 29 GB file (file-backed, reclaimable) plus up to
-        # 16 GiB of anonymous prompt cache (--cache-ram). Limit sized so the
-        # prompt cache never forces the kernel to evict the mapped file.
+        # 32 GiB of anonymous prompt cache (--cache-ram). 48Gi covers the
+        # cache plus process overhead; under pressure the kernel evicts the
+        # mapped file pages, which are only read at load (weights live on
+        # the GPUs), so the cost is a slower cold restart, not an OOM.
         resources:
           limits:
             cpu: '14'
-            memory: 40Gi
+            memory: 48Gi
           requests:
             cpu: '4'
             memory: 8Gi
