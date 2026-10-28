@@ -83,8 +83,13 @@ spec:
             secretKeyRef:
               key: api_key
               name: hermes-jev
-        # v0.21.5 (release tag v2026.9.24), pinned by digest 2026-09-25. The
-        # 2026-09-12 pin to v0.21.0 is lifted: v0.21.2+ turn the bare 'ollama'
+        # v0.22.5 since 2026-10-28 (was v0.21.5): security fixes, cache-
+        # preserving compaction, llama.cpp streaming/retry fixes. v0.22 moved
+        # uv under Hermes' pm; hermes-image links it back onto PATH.
+        # Pre-upgrade backups: Longhorn snapshot hermes-data-pre-0-22-5 and
+        # /opt/data/backups/pre-0.22.5-20261028.tgz. Rollback: the previous
+        # refs were hermes-agent:0.21.5-ash4d.2 / hermes-webui:0.52.379-ash4d.2.
+        # History: the 2026-09-12 pin to v0.21.0 is lifted: v0.21.2+ turn the bare 'ollama'
         # alias into 'custom', which broke colon-tagged model names in the
         # webui's route-hint parser. config.yaml on the PVC now uses the named
         # provider custom:ollama (custom_providers[ollama]) and a colon-free
@@ -95,7 +100,7 @@ spec:
         # Since 2026-09-25 this is the upstream digest above rebuilt with the
         # ash4d toolbelt (github.com/darthzen/hermes-image, Dockerfile.agent).
         # Upgrading = bump ARG UPSTREAM there, rebuild, then update both refs.
-        image: registry.ash4d.com/ash4d-lab/hermes-agent:0.21.5-ash4d.2@sha256:19600d20eb8f8ce3d7136210fd7c195d8349c92b84bd631000c046ca321fccce
+        image: registry.ash4d.com/ash4d-lab/hermes-agent:0.22.5-ash4d.2@sha256:db2523b1466c008132fb023100564f170be4c17cfa20de67a209127c596e2c3d
         imagePullPolicy: Always
         name: hermes-agent
         ports:
@@ -163,15 +168,15 @@ spec:
           value: /home/hermeswebui/.hermes/webui
         - name: HERMES_NIX_BUILD
           value: '1'
-        # 0.52.379 (built 2026-09-24, revision ff26335), pinned by digest
-        # 2026-09-25. api/config.py _parse_provider_qualified_model_id still
+        # 0.52.544 (latest stable) since 2026-10-28, upgraded together with the
+        # agent as the webui README requires. Earlier note (0.52.379): api/config.py _parse_provider_qualified_model_id still
         # splits @provider:model with rsplit(':', 1), so a colon INSIDE the model
         # name (qwen3.8:27b-...) is still truncated. Safe now only because the
         # model name on the PVC carries no colon; see the agent note above.
         # Rebuilt with the toolbelt (hermes-image, Dockerfile.webui). That image
         # pre-builds /app/venv owned by 10000:10000 — keep WANTED_UID/GID above
         # at 10000 or the venv is unwritable at startup.
-        image: registry.ash4d.com/ash4d-lab/hermes-webui:0.52.379-ash4d.2@sha256:804f7b1d5bac1c53f97cfa146ac0b75b73f41c9e1c012806dfc7fd9b9482b89e
+        image: registry.ash4d.com/ash4d-lab/hermes-webui:0.52.544-ash4d.1@sha256:72366459fea765f714f8fcfcbebe2846f48dafc4a2ad876993ca3078543151d7
         imagePullPolicy: Always
         name: hermes-webui
         ports:
@@ -220,7 +225,7 @@ spec:
         - sh
         - -c
         - cp -a /opt/hermes/. /agent-src/ && echo agent-source-copied
-        image: registry.ash4d.com/ash4d-lab/hermes-agent:0.21.5-ash4d.2@sha256:19600d20eb8f8ce3d7136210fd7c195d8349c92b84bd631000c046ca321fccce
+        image: registry.ash4d.com/ash4d-lab/hermes-agent:0.22.5-ash4d.2@sha256:db2523b1466c008132fb023100564f170be4c17cfa20de67a209127c596e2c3d
         imagePullPolicy: Always
         name: copy-agent-src
         volumeMounts:
