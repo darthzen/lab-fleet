@@ -88,13 +88,18 @@ spec:
         # rebalance if either card sits >29 GiB. Ollama's layer split measured
         # 19.9 / 21.1 GiB at 131k (2026-09-03).
         #
-        # TRIAL 2026-10-28: --split-mode tensor (experimental in b11058, PR
-        # #19378). Both cards work on every layer at once instead of taking
-        # turns, which should raise decode. Even 1,1 split: with both cards
-        # computing every layer, an uneven share makes the slower one gate
-        # each token. Layer-split baseline (512-token gens x3): decode 51-53
-        # tok/s short ctx, 43-45 at 30.9K; prefill 868 tok/s at 30.9K; VRAM
-        # 21.3 / 28.3 GiB. Previous values: --tensor-split 30,35, layer.
+        # --split-mode tensor since 2026-10-28 (experimental in b11058, PR
+        # #19378): both cards work on every layer at once instead of taking
+        # turns. Even 1,1 split, since with both cards computing every layer
+        # an uneven share makes the slower one gate each token.
+        # Measured A/B against layer split 30,35 (512-token gens, warm cache):
+        #   decode, short ctx   51-53 -> 71 tok/s
+        #   decode, 30.9K ctx   43-45 -> 45-52 tok/s
+        #   prefill, 30.9K      868 -> 879 tok/s (unchanged)
+        #   VRAM                21.3 / 28.3 -> 23.6 / 23.6 GiB
+        # Prompt cache and end-of-turn checkpoints behave identically.
+        # Sampling falls back to CPU in this mode (logged warning); no
+        # measurable cost. Revert: --tensor-split 30,35 + --split-mode layer.
         - --tensor-split
         - '1,1'
         # `row` fails at load on b11058 with "device CUDA0 does not support
