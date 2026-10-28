@@ -44,6 +44,15 @@
 # were paid for by deleting Uptime, which was 2 columns of hours nobody reads off
 # a wall screen, plus 1 column off Ollama Model. Widening any panel here means
 # taking the column from another.
+#
+# 2026-10-28: the five Ollama panels were replaced in place (same gridPos) with
+# llama-server ones, since Ollama has sat at 0 replicas since 2026-09-20 and the
+# panels read empty. Ollama Model -> Cache Hit; Ollama Model VRAM -> Prompt
+# Tokens: cached vs re-read; Ollama Tokens/sec -> LLM Tokens/sec with prefill
+# and decode on separate axes (~870 vs ~40 tok/s -- one shared axis flattens
+# decode); Ollama Latency -> MTP Draft Acceptance (llama.cpp exports no latency
+# histogram); Ollama Model Load / Unload -> LLM Requests. All key on
+# job="llama-server", from the ServiceMonitor in 26-llama-server.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -60,7 +69,7 @@ data:
         "sdf1",
         "gpu",
         "kiosk",
-        "ollama"
+        "llama-server"
       ],
       "timezone": "browser",
       "refresh": "30s",
@@ -600,7 +609,7 @@ data:
         },
         {
           "type": "stat",
-          "title": "Ollama Model",
+          "title": "Cache Hit",
           "gridPos": {
             "h": 3,
             "w": 4,
@@ -611,30 +620,48 @@ data:
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "description": "Name of the model Ollama currently has resident. Reads No data when nothing is loaded (all models evicted after OLLAMA_KEEP_ALIVE).",
+          "description": "Share of prompt tokens served from llama-server's prefix cache over the last hour: cached / (cached + re-read). Low values mean the cache is breaking and turns are paying full prefill. Reads No data with no traffic in the hour.",
           "targets": [
             {
               "refId": "A",
-              "expr": "ollama_model_loaded{job=\"ollama\"} == 1",
-              "instant": true,
-              "legendFormat": "{{model}}"
+              "expr": "sum(increase(llamacpp:prompt_tokens_cached_total{job=\"llama-server\"}[1h])) / (sum(increase(llamacpp:prompt_tokens_cached_total{job=\"llama-server\"}[1h])) + sum(increase(llamacpp:prompt_tokens_total{job=\"llama-server\"}[1h]))) * 100",
+              "instant": true
             }
           ],
           "fieldConfig": {
             "defaults": {
-              "unit": "none",
+              "unit": "percent",
+              "decimals": 0,
+              "min": 0,
+              "max": 100,
               "color": {
-                "mode": "fixed",
-                "fixedColor": "text"
+                "mode": "thresholds"
               },
-              "noValue": "none loaded"
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 50
+                  },
+                  {
+                    "color": "green",
+                    "value": 80
+                  }
+                ]
+              },
+              "noValue": "idle"
             },
             "overrides": []
           },
           "options": {
             "graphMode": "none",
-            "colorMode": "none",
-            "textMode": "name",
+            "colorMode": "value",
+            "textMode": "value",
             "justifyMode": "center",
             "reduceOptions": {
               "calcs": [
@@ -1521,7 +1548,7 @@ data:
         },
         {
           "type": "timeseries",
-          "title": "Ollama Model VRAM",
+          "title": "Prompt Tokens: cached vs re-read",
           "gridPos": {
             "h": 12,
             "w": 8,
@@ -1532,16 +1559,22 @@ data:
             "type": "prometheus",
             "uid": "prometheus"
           },
+          "description": "Prompt tokens per second served from the prefix cache (cached) versus processed from scratch (re-read). A healthy agent session is mostly cached after turn one; re-read spikes deep in a session mean the prompt diverged from the cache.",
           "targets": [
             {
               "refId": "A",
-              "expr": "ollama_model_vram_bytes{job=\"ollama\"}",
-              "legendFormat": "{{model}}"
+              "expr": "sum(rate(llamacpp:prompt_tokens_cached_total{job=\"llama-server\"}[5m]))",
+              "legendFormat": "cached"
+            },
+            {
+              "refId": "B",
+              "expr": "sum(rate(llamacpp:prompt_tokens_total{job=\"llama-server\"}[5m]))",
+              "legendFormat": "re-read"
             }
           ],
           "fieldConfig": {
             "defaults": {
-              "unit": "bytes",
+              "unit": "short",
               "min": 0,
               "custom": {
                 "lineWidth": 2,
@@ -1549,10 +1582,42 @@ data:
                 "showPoints": "never",
                 "stacking": {
                   "mode": "normal"
-                }
+                },
+                "axisLabel": "tok/s"
               }
             },
-            "overrides": []
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "cached"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "green"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "re-read"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "red"
+                    }
+                  }
+                ]
+              }
+            ]
           },
           "options": {
             "legend": {
@@ -1567,7 +1632,7 @@ data:
         },
         {
           "type": "timeseries",
-          "title": "Ollama Tokens/sec",
+          "title": "LLM Tokens/sec",
           "gridPos": {
             "h": 12,
             "w": 8,
@@ -1578,17 +1643,17 @@ data:
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "description": "Gauge holds its last value between requests; masked to null when no traffic in 10m so idle reads as a gap. NOTE: streaming responses do not update this until the exporter streaming fix lands.",
+          "description": "llama-server throughput over 5m, each phase on its own axis: prefill (reading the prompt, left axis) and decode (writing tokens, right axis). Prefill counts only tokens actually processed, so cache hits do not inflate it. Gaps mean no traffic in the window.",
           "targets": [
             {
               "refId": "A",
-              "expr": "ollama_tokens_per_second{job=\"ollama\"} and on(job) (sum by (job) (rate(ollama_requests_total{job=\"ollama\"}[10m])) > 0)",
-              "legendFormat": "{{model}} decode"
+              "expr": "sum(rate(llamacpp:prompt_tokens_total{job=\"llama-server\"}[5m])) / sum(rate(llamacpp:prompt_seconds_total{job=\"llama-server\"}[5m]))",
+              "legendFormat": "prefill"
             },
             {
               "refId": "B",
-              "expr": "ollama_prompt_tokens_per_second{job=\"ollama\"} and on(job) (sum by (job) (rate(ollama_requests_total{job=\"ollama\"}[10m])) > 0)",
-              "legendFormat": "{{model}} prefill"
+              "expr": "sum(rate(llamacpp:tokens_predicted_total{job=\"llama-server\"}[5m])) / sum(rate(llamacpp:tokens_predicted_seconds_total{job=\"llama-server\"}[5m]))",
+              "legendFormat": "decode"
             }
           ],
           "fieldConfig": {
@@ -1599,11 +1664,57 @@ data:
                 "lineWidth": 2,
                 "fillOpacity": 0,
                 "showPoints": "auto",
-                "spanNulls": false,
-                "axisLabel": "tok/s"
+                "spanNulls": false
               }
             },
-            "overrides": []
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "prefill"
+                },
+                "properties": [
+                  {
+                    "id": "custom.axisPlacement",
+                    "value": "left"
+                  },
+                  {
+                    "id": "custom.axisLabel",
+                    "value": "prefill tok/s"
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "decode"
+                },
+                "properties": [
+                  {
+                    "id": "custom.axisPlacement",
+                    "value": "right"
+                  },
+                  {
+                    "id": "custom.axisLabel",
+                    "value": "decode tok/s"
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "orange"
+                    }
+                  }
+                ]
+              }
+            ]
           },
           "options": {
             "legend": {
@@ -1618,7 +1729,7 @@ data:
         },
         {
           "type": "timeseries",
-          "title": "Ollama Latency",
+          "title": "MTP Draft Acceptance",
           "gridPos": {
             "h": 12,
             "w": 8,
@@ -1629,30 +1740,22 @@ data:
             "type": "prometheus",
             "uid": "prometheus"
           },
+          "description": "Share of MTP draft tokens the model accepted over 5m (--spec-draft-n-max 2). Measured 75-83% at depth 2 on 2026-09-22; a sustained drop means speculative decoding is costing more than it saves.",
           "targets": [
             {
               "refId": "A",
-              "expr": "histogram_quantile(0.50, sum(rate(ollama_request_duration_seconds_bucket{job=\"ollama\"}[5m])) by (le))",
-              "legendFormat": "p50"
-            },
-            {
-              "refId": "B",
-              "expr": "histogram_quantile(0.95, sum(rate(ollama_request_duration_seconds_bucket{job=\"ollama\"}[5m])) by (le))",
-              "legendFormat": "p95"
-            },
-            {
-              "refId": "C",
-              "expr": "histogram_quantile(0.99, sum(rate(ollama_request_duration_seconds_bucket{job=\"ollama\"}[5m])) by (le))",
-              "legendFormat": "p99"
+              "expr": "sum(rate(llamacpp:spec_decode_num_accepted_tokens_total{job=\"llama-server\"}[5m])) / sum(rate(llamacpp:spec_decode_num_draft_tokens_total{job=\"llama-server\"}[5m])) * 100",
+              "legendFormat": "accepted"
             }
           ],
           "fieldConfig": {
             "defaults": {
-              "unit": "s",
+              "unit": "percent",
               "min": 0,
+              "max": 100,
               "custom": {
                 "lineWidth": 2,
-                "fillOpacity": 0,
+                "fillOpacity": 10,
                 "showPoints": "never",
                 "spanNulls": false
               }
@@ -1672,7 +1775,7 @@ data:
         },
         {
           "type": "timeseries",
-          "title": "Ollama Model Load / Unload",
+          "title": "LLM Requests",
           "gridPos": {
             "h": 12,
             "w": 8,
@@ -1683,22 +1786,24 @@ data:
             "type": "prometheus",
             "uid": "prometheus"
           },
+          "description": "Requests llama-server is processing versus queued waiting for one of its 2 slots. Any sustained queued value means callers are waiting on each other.",
           "targets": [
             {
               "refId": "A",
-              "expr": "increase(ollama_model_load_total{job=\"ollama\"}[5m])",
-              "legendFormat": "{{model}} load"
+              "expr": "max(llamacpp:requests_processing{job=\"llama-server\"})",
+              "legendFormat": "processing"
             },
             {
               "refId": "B",
-              "expr": "increase(ollama_model_unload_total{job=\"ollama\"}[5m])",
-              "legendFormat": "{{model}} unload"
+              "expr": "max(llamacpp:requests_deferred{job=\"llama-server\"})",
+              "legendFormat": "queued"
             }
           ],
           "fieldConfig": {
             "defaults": {
               "unit": "short",
               "min": 0,
+              "decimals": 0,
               "custom": {
                 "lineWidth": 2,
                 "fillOpacity": 10,
