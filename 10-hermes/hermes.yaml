@@ -53,6 +53,11 @@ spec:
         # web.backend: firecrawl in hermes' config.yaml on the PVC.
         - name: FIRECRAWL_API_URL
           value: http://api.firecrawl.svc.cluster.local:3002
+        # Search via SearXNG (27-searxng) since 2026-10-28; Firecrawl keeps
+        # page extraction. Pairs with web.search_backend: searxng in
+        # config.yaml on the PVC.
+        - name: SEARXNG_URL
+          value: http://searxng.searxng.svc.cluster.local:8080
         - name: API_SERVER_KEY
           valueFrom:
             secretKeyRef:
