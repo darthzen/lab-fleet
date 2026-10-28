@@ -144,8 +144,11 @@ spec:
         # time-to-first-token on a long Hermes preamble.
         - --batch-size
         - '2048'
+        # ubatch 1024 trial 2026-10-28 against a 512 baseline of 871 tok/s cold
+        # prefill on a 30.8K prompt. Larger micro-batches use the V100 tensor
+        # cores better; the cost is a bigger compute buffer on each card.
         - --ubatch-size
-        - '512'
+        - '1024'
         - --threads
         - '8'
         - --threads-batch
@@ -186,11 +189,6 @@ spec:
         # Scraped by the ServiceMonitor at the bottom of this file; feeds the
         # LLM panels on the sdf1 Health dashboard.
         - --metrics
-        # TEMPORARY 2026-10-28: verbosity 4 surfaces "forcing full prompt
-        # reprocessing" and checkpoint lines for one Hermes cache test. Remove
-        # after the test — level 3 is the default.
-        - --log-verbosity
-        - '4'
         env:
         # GPU pin: BOTH Tesla V100 32 GB cards, by UUID — never by index, the
         # index order moves when cards are added or reseated (the 1070 is
