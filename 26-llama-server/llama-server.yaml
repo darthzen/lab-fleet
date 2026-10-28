@@ -127,8 +127,19 @@ spec:
         # memory — the cgroup limit below covers it.
         - --cache-ram
         - '16384'
-        - --cache-reuse
-        - '256'
+        # --cache-reuse 256 removed 2026-10-28: b11058 logs "cache_reuse is not
+        # supported by this context, it will be disabled" for this hybrid model
+        # with MTP, so the flag did nothing.
+        #
+        # Context checkpoints. 3/4 of Qwen3.8-27B's layers are recurrent and
+        # cannot rewind to an arbitrary token, so a prompt that diverges from
+        # the cached one (edited history, stripped thinking, compaction) can
+        # only resume from a saved checkpoint before the divergence point. At
+        # the default 8192-token spacing, a 30.8K prompt edited ~15K in was
+        # fully re-read (cache_n=0, 37 s) on 2026-10-28. 2048 places them 4x
+        # denser; 32 per slot (the default) still covers 64K of history.
+        - --checkpoint-min-step
+        - '2048'
         # Prompt-processing batch. Ollama uses 512; 2048/512 is what cuts
         # time-to-first-token on a long Hermes preamble.
         - --batch-size
@@ -172,7 +183,14 @@ spec:
         - '0'
         - --repeat-penalty
         - '1.0'
+        # Scraped by the ServiceMonitor at the bottom of this file; feeds the
+        # LLM panels on the sdf1 Health dashboard.
         - --metrics
+        # TEMPORARY 2026-10-28: verbosity 4 surfaces "forcing full prompt
+        # reprocessing" and checkpoint lines for one Hermes cache test. Remove
+        # after the test — level 3 is the default.
+        - --log-verbosity
+        - '4'
         env:
         # GPU pin: BOTH Tesla V100 32 GB cards, by UUID — never by index, the
         # index order moves when cards are added or reseated (the 1070 is
@@ -278,3 +296,23 @@ spec:
   selector:
     app: llama-server
   type: LoadBalancer
+---
+# Scrape /metrics into rancher-monitoring. Its Prometheus selects every
+# ServiceMonitor in every namespace (empty selectors), so no release label is
+# needed. Added 2026-10-28: before this, llama-server's counters existed only
+# in-process and reset on every restart, so there was no cache-hit history.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: llama-server
+  name: llama-server
+  namespace: ai
+spec:
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+  selector:
+    matchLabels:
+      app: llama-server
