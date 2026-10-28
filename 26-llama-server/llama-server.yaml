@@ -144,11 +144,12 @@ spec:
         # time-to-first-token on a long Hermes preamble.
         - --batch-size
         - '2048'
-        # ubatch 1024 trial 2026-10-28 against a 512 baseline of 871 tok/s cold
-        # prefill on a 30.8K prompt. Larger micro-batches use the V100 tensor
-        # cores better; the cost is a bigger compute buffer on each card.
+        # ubatch 1024 was tried 2026-10-28 and lost: 835 tok/s cold prefill on
+        # a 30.8K prompt against 871 at 512, and 2.4 GiB more VRAM on the 0863
+        # card (30.7 of 32 GiB). With --split-mode layer, 2048/512 feeds the
+        # two cards four micro-batches to pipeline; 1024 gives them only two.
         - --ubatch-size
-        - '1024'
+        - '512'
         - --threads
         - '8'
         - --threads-batch
