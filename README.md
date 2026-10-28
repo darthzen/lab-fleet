@@ -101,6 +101,7 @@ flowchart TD
 | 24 | OpenAI tunnel-client → mempalace MCP | raw manifests | tunnel-client v0.0.11 |
 | 25 | Firecrawl self-hosted crawl/scrape API | raw manifests (upstream k8s example, adapted) | 2.11.227 |
 | 26 | llama.cpp server — Qwen3.8-27B-Uncensored Q8_0 + MTP on both V100s (Flash-Next parked on disk) | ghcr.io/ggml-org/llama.cpp server-cuda | b11058 (CUDA 12.8.1) |
+| 27 | SearXNG metasearch — search backend for Hermes and Firecrawl (LAN-only) | docker.io/searxng/searxng | 2026.10.28-c360868e5 |
 
 ### Directory numbers 15+ are append-order, not install-order
 

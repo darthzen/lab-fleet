@@ -36,6 +36,12 @@ data:
   # believes it has all 64Gi of sdf1 and will happily queue past its own limit.
   IS_KUBERNETES: "true"
 
+  # Search provider (2026-10-28). Without it v2 search falls back to
+  # DuckDuckGo alone (apps/api/src/search/v2/index.ts: fire-engine -> searxng
+  # -> ddg). Base URL only; Firecrawl appends /search and asks for format=json.
+  # The api reads this via envFrom, so bump config-rev in api.yaml with it.
+  SEARXNG_ENDPOINT: "http://searxng.searxng.svc.cluster.local:8080"
+
   # AI-backed features (json format, extract, LLM-assisted parsing) are OFF.
   # To point them at the lab's own Ollama rather than OpenAI, uncomment these —
   # ollama-exporter is the metered in-cluster proxy that 18-lab-memory and

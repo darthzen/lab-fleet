@@ -29,6 +29,9 @@ spec:
       app: api
   template:
     metadata:
+      annotations:
+        # Bump when firecrawl-config changes; envFrom does not restart pods.
+        ash4d.com/config-rev: "1"
       labels:
         app: api
         app.kubernetes.io/part-of: firecrawl

@@ -1,0 +1,33 @@
+# settings.yml layered over SearXNG's defaults (use_default_settings), so engine
+# lists and categories track upstream. Only the deltas live here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: searxng-settings
+  labels:
+    app.kubernetes.io/name: searxng
+data:
+  settings.yml: |
+    use_default_settings: true
+    general:
+      instance_name: ash4d-searxng
+    server:
+      # Overridden at runtime by SEARXNG_SECRET (Secret searxng-secret).
+      # SearXNG refuses to start on the stock "ultrasecretkey" placeholder.
+      secret_key: "set-from-SEARXNG_SECRET-env"
+      # The limiter is bot protection for public instances and needs valkey.
+      # Our only clients are Hermes and Firecrawl on the LAN.
+      limiter: false
+      public_instance: false
+      image_proxy: false
+    search:
+      # json is what Hermes (/search?format=json) and Firecrawl request; the
+      # default settings only serve html and return 403 for json.
+      formats:
+        - html
+        - json
+      safe_search: 0
+      autocomplete: ""
+    outgoing:
+      request_timeout: 5.0
+      max_request_timeout: 10.0

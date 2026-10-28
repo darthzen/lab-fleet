@@ -63,6 +63,7 @@ adopted, rolled back, or paused independently of every other.
 | `lab-cloudflare-tunnel` | `cloudflare-tunnel` | `23-cloudflare-tunnel` | low for the cluster, **high stakes for the public site** — **fresh install, not an adoption**; needs `cloudflared-credentials` Secret |
 | `lab-openai-tunnel` | `openai-tunnel` | `24-openai-tunnel` | low — **fresh install, not an adoption**; one stateless pod; needs `tunnel-client-credentials` Secret |
 | `lab-firecrawl` | `firecrawl` | `25-firecrawl` | med — **fresh install, not an adoption**; needs `firecrawl-nuq-postgres` Secret + DNS |
+| `lab-searxng` | `searxng` | `27-searxng` | low — **fresh install**; needs `searxng-secret` Secret + DNS |
 | `lab-metallb-system` | `metallb-system` | `01-networking` — then patch in `01-networking/pools` | med–high |
 | `lab-nvidia-device-plugin` | `nvidia-device-plugin` | `03-gpu` — `03-gpu/runtimeclass` is **on hold, k3s owns it** | med–high |
 | `lab-cattle-monitoring-system` | `cattle-monitoring-system` | `03-gpu/dcgm-exporter` | med |
@@ -215,6 +216,7 @@ in the four files that have never been applied (`lab-metallb-system`,
 | `lab-cattle-monitoring-system` | not yet applied |
 | `lab-longhorn-system` | not yet applied |
 | `lab-firecrawl` | not yet applied |
+| `lab-searxng` | applied 2026-10-28 |
 
 `c-nnzn9` (sdf1) is the only Fleet-managed downstream; the junk
 `cluster-ee8f7993b3a6` was deleted 2026-07-29. So the `ash4d-lab: ""` selector in

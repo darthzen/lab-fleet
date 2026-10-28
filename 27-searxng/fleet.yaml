@@ -1,0 +1,24 @@
+# Fleet bundle — SearXNG metasearch (raw manifests).
+#
+# Search backend for Hermes (laptop + hermes-agent pod, via SEARXNG_URL) and
+# for Firecrawl (SEARXNG_ENDPOINT in 25-firecrawl/configmap.yaml). Before this,
+# Firecrawl's only search was its DuckDuckGo fallback (apps/api/src/search/v2/
+# index.ts at v2.11.227: fire-engine -> searxng -> ddg), so one throttled engine
+# meant empty results. SearXNG fans out to Google, Bing, Brave, DuckDuckGo,
+# Wikipedia and others and merges them.
+#
+# FRESH INSTALL (2026-10-28). Nothing named searxng existed on sdf1.
+#
+# MANUAL PREREQUISITES — both must exist before the path is enabled:
+#   1. Secret `searxng-secret` in this namespace, key SEARXNG_SECRET (random;
+#      signs SearXNG's cookies/tokens). Kept out of git because this repo is
+#      public:
+#        kubectl -n searxng create secret generic searxng-secret \
+#          --from-literal=SEARXNG_SECRET="$(openssl rand -hex 32)"
+#   2. DNS: searxng.ash4d.com -> 192.168.7.150 (shared Traefik VIP), DNS-only
+#      (not proxied) in Cloudflare, like firecrawl.ash4d.com.
+#
+# THE API IS UNAUTHENTICATED and on the LAN. Do NOT add this host to
+# 23-cloudflare-tunnel: a public SearXNG gets scraped by bots and the lab's IP
+# then gets CAPTCHA'd by the upstream engines, which breaks search for us.
+defaultNamespace: searxng
