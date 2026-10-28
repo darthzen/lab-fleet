@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: searxng
+  labels:
+    app.kubernetes.io/name: searxng
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: searxng
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: searxng
+      annotations:
+        # Bump to roll the pod when settings.yml changes (ConfigMap edits
+        # do not restart it on their own).
+        ash4d.com/settings-rev: "1"
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: sdf1
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 977
+        runAsGroup: 977
+        fsGroup: 977
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: searxng
+        # Vendor image (maintained upstream), pinned by digest. Tags are
+        # date-hash; re-resolve with: crane digest docker.io/searxng/searxng:<tag>
+        image: docker.io/searxng/searxng:2026.10.28-c360868e5@sha256:268a4b460136dcefc8f2e896b6098ba3f770c8218dbbddcb86811b06b06816f1
+        ports:
+        - name: http
+          containerPort: 8080
+        env:
+        - name: SEARXNG_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: searxng-secret
+              key: SEARXNG_SECRET
+        - name: SEARXNG_BASE_URL
+          value: https://searxng.ash4d.com/
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: [ALL]
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        resources:
+          requests:
+            cpu: 50m
+            memory: 192Mi
+          limits:
+            cpu: '2'
+            memory: 768Mi
+        volumeMounts:
+        # Whole config dir read-only; the entrypoint only copies a template in
+        # when settings.yml is missing, and only warns about ownership.
+        - name: settings
+          mountPath: /etc/searxng
+          readOnly: true
+        - name: cache
+          mountPath: /var/cache/searxng
+      volumes:
+      - name: settings
+        configMap:
+          name: searxng-settings
+      - name: cache
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: searxng
+  labels:
+    app.kubernetes.io/name: searxng
+spec:
+  selector:
+    app.kubernetes.io/name: searxng
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http

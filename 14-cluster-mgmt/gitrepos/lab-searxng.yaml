@@ -1,0 +1,29 @@
+# Fleet GitRepo — searxng namespace.
+#
+# Fleet GitRepo CUSTOM RESOURCE on the RANCHER CONTROLLER (context `rancher`):
+#
+#   kubectl --context rancher apply -f 14-cluster-mgmt/gitrepos/lab-searxng.yaml
+#
+# One GitRepo per namespace — see gitrepos/README.md.
+#
+# FRESH INSTALL (2026-10-28), single path, nothing to adopt. Prerequisites
+# (Secret searxng-secret, DNS searxng.ash4d.com) are in 27-searxng/fleet.yaml.
+#
+# 🔴 Do NOT roll back by removing the path once synced; use spec.paused.
+apiVersion: fleet.cattle.io/v1alpha1
+kind: GitRepo
+metadata:
+  name: lab-searxng
+  namespace: fleet-default
+spec:
+  repo: https://github.com/darthzen/lab-fleet
+  branch: main
+  pollingInterval: 60s
+  paths:
+    - 27-searxng
+  targets:
+    - clusterSelector:
+        matchLabels:
+          ash4d-lab: ""
+  correctDrift:
+    enabled: true

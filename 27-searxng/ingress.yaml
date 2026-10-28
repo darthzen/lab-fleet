@@ -1,0 +1,27 @@
+# Traefik + cert-manager DNS-01 (letsencrypt-dns), same shape as 25-firecrawl.
+# REQUIRES searxng.ash4d.com -> 192.168.7.150 (DNS-only) in Cloudflare.
+# LAN only — never on the cloudflare tunnel (see fleet.yaml).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: searxng
+  labels:
+    app.kubernetes.io/name: searxng
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-dns
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [searxng.ash4d.com]
+      secretName: searxng-ash4d-tls
+  rules:
+    - host: searxng.ash4d.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: searxng
+                port:
+                  number: 8080
