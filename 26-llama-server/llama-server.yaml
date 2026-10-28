@@ -87,13 +87,20 @@ spec:
         # Derived, not measured — check nvidia-smi after the first load and
         # rebalance if either card sits >29 GiB. Ollama's layer split measured
         # 19.9 / 21.1 GiB at 131k (2026-09-03).
+        #
+        # TRIAL 2026-10-28: --split-mode tensor (experimental in b11058, PR
+        # #19378). Both cards work on every layer at once instead of taking
+        # turns, which should raise decode. Even 1,1 split: with both cards
+        # computing every layer, an uneven share makes the slower one gate
+        # each token. Layer-split baseline (512-token gens x3): decode 51-53
+        # tok/s short ctx, 43-45 at 30.9K; prefill 868 tok/s at 30.9K; VRAM
+        # 21.3 / 28.3 GiB. Previous values: --tensor-split 30,35, layer.
         - --tensor-split
-        - '30,35'
-        # layer is the only option on this build: `row` fails at load on
-        # b11058 with "device CUDA0 does not support split buffers" (tried
-        # 2026-09-22). Numbers for the configs that do run are in README.md.
+        - '1,1'
+        # `row` fails at load on b11058 with "device CUDA0 does not support
+        # split buffers" (tried 2026-09-22).
         - --split-mode
-        - layer
+        - tensor
         - --load-mode
         - mmap
         # V100 is SM 7.0: flash attention runs on the generic kernel config
