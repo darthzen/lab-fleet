@@ -3,8 +3,8 @@
 # Renamed to .txt so Fleet never applies it, the same convention as
 # 09-mcp/github-mcp-token.secret.example.yaml.txt.
 #
-# This Job creates the buzz-media bucket. It does NOT exist on the cluster
-# (it ran once and was reaped), so committing it as a live manifest would
+# This Job creates the buzz-media bucket. Last run at the 2026-11-12 rebuild
+# (it runs once and is reaped), so committing it as a live manifest would
 # make Fleet CREATE it -- not a no-op. Jobs are also near-immutable, so a
 # Job inside a synced bundle fights Fleet on every subsequent change.
 #
@@ -22,7 +22,7 @@ spec:
       restartPolicy: OnFailure
       containers:
       - name: mc
-        image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+        image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z@sha256:cfc83108c3abb371f8fb84d99c1fdc88f8c237e022409b0081fb7c0a3be634dd
         envFrom:
         - secretRef:
             name: buzz-minio-root

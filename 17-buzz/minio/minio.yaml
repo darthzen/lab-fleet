@@ -1,6 +1,11 @@
-# Standalone MinIO for buzz object storage. The buzz chart's own
+# Standalone S3 store for buzz object storage. The buzz chart's own
 # bundled minio subchart is disabled (minio.enabled: false) because it is
-# eval-only; this is the real one. Reconstructed from buzz-relay/minio.yaml.
+# quickstart-only; this is the real one.
+#
+# Image: pgsty/silo, a maintained MinIO fork, since the 2026-11-12 rebuild.
+# Upstream minio/minio community images stopped being published, and buzz
+# chart 0.1.9+ moved its own quickstart to Silo. Pin matches chart 0.1.11.
+# Server API, env (MINIO_ROOT_*), health paths and /data layout are MinIO's.
 #
 # The Namespace object from that file is deliberately dropped: Fleet creates
 # the namespace from defaultNamespace, and two bundles declaring the same
@@ -10,7 +15,7 @@ kind: PersistentVolumeClaim
 metadata:
   name: buzz-minio-data
 spec:
-  storageClassName: longhorn
+  storageClassName: freezer   # Retain; see ../relay/values.yaml
   accessModes:
   - ReadWriteOnce
   resources:
@@ -40,7 +45,7 @@ spec:
         fsGroup: 1000
       containers:
       - name: minio
-        image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+        image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z@sha256:635197cb9f36d01bee221d34d1c7d7960f6a95c48b0b6c01d99cd13bdae51a46
         args:
         - server
         - /data

@@ -1,0 +1,46 @@
+# Fleet bundle — Buzz relay (Helm).
+#
+# Nostr-based messaging relay at buzz.ash4d.com: one relay binary serving
+# WebSocket + REST + web UI, backed by bundled PostgreSQL and Redis subcharts.
+# Object storage is the sibling bundle ../minio.
+#
+# REBUILT 2026-11-12 from an empty namespace. The previous install (chart
+# 0.1.7) had been torn down entirely — GitRepo, PVCs and the buzz-relay Secret
+# all gone — so this is a fresh install, not an adoption: new Postgres, new
+# MinIO bucket, owner-only roster. The relay private key was restored from
+# 1Password, so the relay keeps its old identity.
+#
+# Layout changed at the rebuild: relay and MinIO are now SIBLING paths
+# (17-buzz/relay, 17-buzz/minio). Previously the relay lived at 17-buzz and
+# MinIO was a nested child, which Fleet deploys whenever the parent is
+# adopted — the child could not be staged on its own. Siblings can be listed
+# in the GitRepo independently. See FLEET-WIRING.md.
+#
+# The chart lives at oci://ghcr.io/block/buzz/charts/buzz — note the `/charts/`
+# path segment; oci://ghcr.io/block/buzz 404s. `github.com/block/buzz` is the
+# real source (the chart's home/sources URLs), and its Chart.lock pins the
+# postgres and redis subcharts from oci://registry-1.docker.io/cloudpirates,
+# so there is nothing to vendor and no `helm dependency build` for Fleet to run.
+#
+# PREREQUISITE SECRET: `buzz-relay` must exist in the namespace before this
+# path is enabled. values.yaml sets secrets.existingSecret, which suppresses
+# the chart's own Secret; the Postgres and Redis subcharts still read
+# postgres-password / redis-password from that same name. Key list in
+# values.yaml and in the buzz-relay repo's SECRETS.md.
+#
+# TLS: none on this cluster. buzz.ash4d.com reaches Traefik over the
+# Cloudflare tunnel (23-cloudflare-tunnel), which terminates TLS at the
+# Cloudflare edge and hands Traefik plain HTTP on :80. The GCP edge proxy that
+# used to terminate TLS was retired 2026-08-02.
+#
+# Image is pinned by digest via image.digest (new in chart 0.1.9+). Upstream
+# publishes no versioned relay images — only :main and :latest — and the
+# chart's appVersion 0.1.0 image lacks buzz-admin and migrations, so a :main
+# digest is the only workable pin. See values.yaml for the security floor.
+defaultNamespace: buzz
+helm:
+  releaseName: buzz
+  chart: oci://ghcr.io/block/buzz/charts/buzz
+  version: "0.1.11"
+  valuesFiles:
+    - values.yaml

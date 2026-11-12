@@ -1,0 +1,173 @@
+# Buzz relay — buzz.ash4d.com. Chart oci://ghcr.io/block/buzz/charts/buzz.
+#   helm template buzz oci://ghcr.io/block/buzz/charts/buzz \
+#     --version 0.1.11 -n buzz -f values.yaml
+
+# Canonical host. This selects the community: the relay binds
+# resolve_host(request.Host) -> community, and creates a NEW community for any
+# host it hasn't seen. Changing this value does not rename a community, it
+# switches to a different one. The pre-rebuild community
+# (3dc0506a-12b2-44dc-bd57-d17b3532f71a) went with the old Postgres volume;
+# the rebuild creates a fresh one on first request.
+relayUrl: wss://buzz.ash4d.com
+# mediaBaseUrl defaults to https://buzz.ash4d.com/media — leave unset.
+
+# Owner identity (Rick). relay.requireRelayMembership makes this a closed
+# relay; at the rebuild the owner is the only member. Agents are added with
+#   kubectl exec -n buzz deploy/buzz -- buzz-admin add-member --pubkey <hex> --role member
+# Pubkeys for the 11 agents are in the buzz-relay repo's SECRETS.md.
+ownerPubkey: "94005a8c7fd13215b1191163c0990d406aa50886893819015aa03fd35ac0a075"
+
+replicaCount: 1
+
+# Pinned by digest. Upstream versions the relay with relay-v* git tags but
+# publishes only :main and :latest images, and chart appVersion 0.1.0's image
+# ships without buzz-admin or migrations. To re-pin:
+#   crane digest ghcr.io/block/buzz:main
+#   crane config ghcr.io/block/buzz@<digest> | jq '.config.Labels'
+#
+# Current pin: rev 0e6037c7 (main, built 2026-11-12). Security floor is rev
+# 93114c9c (2026-08-18): RUSTSEC-2026-0216, -0224, -0225..0232 bumps, and
+# authenticated media reads (block/buzz#4610). Do not roll back below it.
+image:
+  repository: ghcr.io/block/buzz
+  digest: "sha256:0ccbce1a65a4c149f489004497431f03d40dbb5c3780a8ae24dca66bb8713ae0"
+
+# Pre-created out-of-band; never in git (this repo is public).
+#
+# MUST be named "buzz-relay" (= <fullname>-relay). Setting existingSecret
+# suppresses the chart's own Secret entirely, but the bundled Postgres/Redis
+# subcharts still hardcode a reference to <fullname>-relay for their
+# postgres-password / redis-password keys.
+#
+# Required keys: BUZZ_RELAY_PRIVATE_KEY (relay identity, from 1Password —
+# never rotate), BUZZ_GIT_HOOK_HMAC_SECRET, BUZZ_S3_ACCESS_KEY,
+# BUZZ_S3_SECRET_KEY, DATABASE_URL, REDIS_URL, postgres-password,
+# redis-password. Optional: BUZZ_KLIPY_API_KEY (GIF search; absent = off).
+secrets:
+  existingSecret: buzz-relay
+
+relay:
+  requireRelayMembership: true
+  # Leave null: chart auto-disables if replicaCount ever goes >1 (no SFU yet).
+  huddleAudioAvailable: null
+  resources:
+    requests: {cpu: "500m", memory: "512Mi"}
+    limits:   {cpu: "2",    memory: "2Gi"}
+
+# ── Ingress ─────────────────────────────────────────────────────────────────
+# Public path: Cloudflare edge (TLS) -> cloudflared -> Traefik :80 -> here.
+# No tls block and no cert-manager annotation: nothing on this cluster
+# terminates TLS for this host.
+ingress:
+  enabled: true
+  className: traefik
+  # Empty -> derived from relayUrl (buzz.ash4d.com), path / Prefix.
+  #
+  # Do not add a second hostname. The relay binds one community per request
+  # Host, so a second name silently creates and serves a second, empty
+  # community. Host rewriting at a proxy does not work either:
+  # nip98_expected_url() builds the expected signature URL from tenant.host(),
+  # so a rewritten Host fails every media upload, git push and invite.
+  hosts: []
+  tls: []
+
+# ── Object storage: standalone MinIO-compatible server in ../minio ──────────
+minio:
+  enabled: false                # NOT the chart's quickstart subchart
+s3:
+  endpoint: http://buzz-minio.buzz.svc.cluster.local:9000
+  bucket: buzz-media
+  # accessKey/secretKey come from secrets.existingSecret.
+
+# ── Volumes: all on the `freezer` StorageClass ──────────────────────────────
+# freezer-disk, not default-disk: default-disk is over-provisioned (~82%
+# scheduled in 2026-08). freezer is Longhorn, 1 replica, strict-local, and
+# reclaimPolicy Retain — deleting a PVC here leaves its PV and data behind,
+# so a teardown needs the PVs removed explicitly.
+
+# ── Postgres (bundled CloudPirates subchart) ────────────────────────────────
+postgresql:
+  enabled: true
+  auth:
+    database: buzz
+    username: buzz
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: freezer
+
+# ── Redis (only strictly required above 1 replica; here so scaling is easy) ─
+#
+# updateStrategy.rollingUpdate is nulled out because the subchart's default,
+# maxUnavailable: 1, is a field this cluster's API server SILENTLY DISCARDS
+# (MaxUnavailableStatefulSet is off). Fleet would then see the field missing
+# forever and report the bundle `Modified` on every reconcile.
+redis:
+  enabled: true
+  updateStrategy:
+    rollingUpdate: null
+  persistence:
+    enabled: true
+    size: 4Gi
+    storageClass: freezer
+
+# ── Git scratch ─────────────────────────────────────────────────────────────
+# Ephemeral working space; truth lives in Postgres + object storage.
+persistence:
+  git:
+    enabled: true
+    storageClass: freezer
+    accessMode: ReadWriteOnce
+    size: 10Gi
+
+git:
+  # Chart default is 500 MiB, but external pushes now cross the Cloudflare
+  # edge, which caps a proxied request body at 100 MB on this plan. A pack
+  # over that fails from outside the LAN regardless of this value.
+  #
+  # KNOWN-INERT ENV, upstream chart bug: Helm
+  # coerces YAML numbers to float64 and the chart templates this with | quote,
+  # so it renders as "5.24288e+08". The relay's u64 parse fails and falls back
+  # to its compiled default — the same 500 MiB. Any custom value here is a
+  # no-op until the chart is fixed; the schema rejects strings.
+  maxPackBytes: 524288000
+
+migrate:
+  autoMigrate: true
+
+# ── Device pairing (NIP-AB) ─────────────────────────────────────────────────
+# The relay does NOT serve the legacy same-host /pair WebSocket. Clients
+# resolve the pairing route from NIP-11 (pairing_relay_url), so this runs the
+# stateless buzz-pair-relay Deployment + Service buzz-pairing:5000 and the
+# Ingress in extraManifests routes /pair on the same host to it. The
+# one-community-per-Host caveat does not apply: the pairing relay is
+# stateless and community-agnostic.
+pairingRelay:
+  enabled: true
+  url: wss://buzz.ash4d.com/pair
+
+extraManifests:
+  - apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: buzz-pairing
+    spec:
+      ingressClassName: traefik
+      rules:
+        - host: buzz.ash4d.com
+          http:
+            paths:
+              - path: /pair
+                pathType: Prefix
+                backend:
+                  service:
+                    name: buzz-pairing
+                    port:
+                      number: 5000
+
+# Rancher monitoring is present; flip on once the relay is healthy.
+serviceMonitor:
+  enabled: false
+
+podDisruptionBudget:
+  enabled: false                # meaningless at replicaCount 1

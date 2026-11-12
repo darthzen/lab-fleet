@@ -9,33 +9,25 @@
 #
 # One GitRepo per namespace — see gitrepos/README.md.
 #
-# MED RISK: stateful. 2 Deployments, 2 StatefulSets (bundled Postgres and
-# Redis) and 4 Longhorn PVCs. Chart pinned to an immutable 0.1.6 from
-# oci://ghcr.io/block/buzz/charts/buzz (note the /charts/ segment -- probing
-# oci://ghcr.io/block/buzz 404s and briefly led to vendoring a copy).
-# Verified: renders byte-identical to live, so adoption is a no-op.
+# MED RISK: stateful. 3 Deployments (relay, pairing relay, MinIO),
+# 2 StatefulSets (bundled Postgres and Redis), 4 PVCs on the `freezer`
+# StorageClass (reclaimPolicy Retain). Chart 0.1.11 from
+# oci://ghcr.io/block/buzz/charts/buzz (note the /charts/ segment).
 #
-# PREREQUISITE SECRET: `buzz-relay` — the relay and BOTH subcharts read it.
+# REBUILT 2026-11-12 as a fresh install into an empty namespace; nothing to
+# adopt. See 17-buzz/relay/fleet.yaml.
 #
-# Do not add a cert-manager annotation for buzz.ash4d.com. TLS terminates
-# at a GCP edge proxy, and two clusters issuing for the same host would
-# race on the same _acme-challenge TXT record at renewal. See
-# 17-buzz/fleet.yaml.
+# PREREQUISITE SECRETS, both out of band: `buzz-relay` (relay and both
+# subcharts) and `buzz-minio-root` (MinIO). Then run the one-time bucket Job
+# in 17-buzz/minio/buzz-minio-mkbucket.job.yaml.txt.
 #
-# NOT STAGED — and it cannot be. `17-buzz/minio` is a CHILD of
-# `17-buzz`, and Fleet deploys a nested path as soon as its parent is
-# adopted: the nested fleet.yaml splits it into its own bundle, but that
-# bundle is still rendered under the parent's path entry. Applying this
-# file therefore brings BOTH paths up at once. Verified 2026-07-30.
+# The two paths are SIBLINGS, so either can be listed alone to stage it —
+# unlike the pre-rebuild layout, where MinIO was a nested child of 17-buzz
+# and came up with its parent no matter what spec.paths said.
 #
-# Do not try to gate the child by leaving it out of spec.paths; it has no
-# effect. Gating only works for SIBLING paths (cf. 01-networking and
-# 01-networking/pools). See FLEET-WIRING.md.
-#
-# 🔴 And do NOT roll back by removing a path once adoption has succeeded:
-#    for a bundle whose Helm release Fleet owns, that UNINSTALLS the
-#    release. Use spec.paused instead. This deleted karakeep on
-#    2026-07-30 -- see FLEET-WIRING.md.
+# 🔴 Do NOT roll back by removing a path once Fleet owns the Helm release:
+#    that UNINSTALLS the release. Use spec.paused instead. This deleted
+#    karakeep on 2026-07-30 -- see FLEET-WIRING.md.
 apiVersion: fleet.cattle.io/v1alpha1
 kind: GitRepo
 metadata:
@@ -53,7 +45,8 @@ spec:
   # rather than depending on a controller-wide default. See FLEET-WIRING.md.
   pollingInterval: 60s
   paths:
-    - 17-buzz
+    - 17-buzz/minio
+    - 17-buzz/relay
   # `ash4d-lab` is a bespoke label already on the sdf1 cluster (c-nnzn9). Chosen
   # over management.cattle.io/cluster-name, which Rancher owns and may rewrite.
   # Do NOT reuse site=ash4d — that belongs to the ash4d-site GitRepo and resolves
