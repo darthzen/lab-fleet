@@ -93,7 +93,7 @@ flowchart TD
 | 14 | Cluster mgmt plane (Rancher downstream + Fleet) | README only | v2.14.3 |
 | 15 | cert-manager + `letsencrypt-dns` ClusterIssuer | jetstack/cert-manager | v1.20.2 |
 | 16 | ash4d.com origin (nginx placeholder) | raw manifests | nginx-unprivileged:alpine |
-| 17 | Buzz relay (+ standalone MinIO) | oci://ghcr.io/block/buzz/charts/buzz | 0.1.6 (app 0.1.0) |
+| 17 | Buzz relay (+ standalone Silo/MinIO) | oci://ghcr.io/block/buzz/charts/buzz | 0.1.11 (image main@0e6037c) |
 | 21 | Unsloth Studio (fine-tuning GUI) — scaled to 0 | unsloth/unsloth | 2026.5.9 (studio v0.1.43-beta) |
 | 23 | Cloudflare tunnel (cloudflared) | raw manifests | cloudflare/cloudflared:2026.7.3 |
 | 24 | OpenAI tunnel-client → mempalace MCP | raw manifests | tunnel-client v0.0.11 |
