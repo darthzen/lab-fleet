@@ -606,7 +606,7 @@ Controller (this is where bundle state actually lives):
 kubectl --context rancher -n fleet-default get cluster c-nnzn9 \
   -o jsonpath='{.status.agent.lastSeen}'
 
-kubectl --context rancher -n fleet-default get gitrepo lab-node-red \
+kubectl --context rancher -n fleet-default get gitrepo lab-emby \
   -o jsonpath='{.status.display.state}|{.status.display.readyBundleDeployments}'
 kubectl --context rancher get bundles -A
 kubectl --context rancher -n cluster-fleet-default-c-nnzn9-eaf6ebdbb298 \
