@@ -33,7 +33,6 @@ flowchart TD
     subgraph apps["10-13 — Applications"]
         HERMES[10 Hermes Agent]
         EMBY[11 Emby]
-        NODERED[12 Node-RED]
         RESILIO[13 Resilio Sync]
     end
 
@@ -90,7 +89,6 @@ flowchart TD
 | 09 | MCP layer (mcpo, k8s/github MCP, docs-rag MCP, fossa-mcp, ollama-code, jev-mcp) | manifests + in-repo source | jev-mcp 0.1.2 (Harbor) |
 | 10 | Hermes agent (Slack AI agent) | nousresearch/hermes-agent | latest |
 | 11 | Emby media server (GPU transcode) | emby/embyserver | latest |
-| 12 | Node-RED home automation | nodered/node-red | latest |
 | 13 | Resilio Sync (P2P file sync) | resilio/sync | latest |
 | 14 | Cluster mgmt plane (Rancher downstream + Fleet) | README only | v2.14.3 |
 | 15 | cert-manager + `letsencrypt-dns` ClusterIssuer | jetstack/cert-manager | v1.20.2 |

@@ -6,7 +6,7 @@ lists which paths to render. They live on the **Rancher controller**
 (192.168.7.148, kubectl context `rancher`) — not on sdf1 — so they are not part
 of any bundle in this repo. Kept here as the versioned source of record.
 
-    kubectl --context rancher apply -f 14-cluster-mgmt/gitrepos/lab-node-red.yaml
+    kubectl --context rancher apply -f 14-cluster-mgmt/gitrepos/lab-emby.yaml
 
 Applying any file here is a **single** adoption step, and idempotent once adopted —
 no file holds more than one unadopted path (see the rule below). The exception is
@@ -53,7 +53,6 @@ adopted, rolled back, or paused independently of every other.
 
 | GitRepo | Namespace | Paths | Risk |
 |---|---|---|---|
-| `lab-node-red` | `node-red` | `12-node-red` | low |
 | `lab-emby` | `emby` | `11-emby` | low |
 | `lab-resilio` | `resilio` | `13-resilio` | low |
 | `lab-ash4d-origin` | `ash4d-origin` | `16-ash4d-origin` | low |
@@ -206,7 +205,6 @@ in the four files that have never been applied (`lab-metallb-system`,
 
 | GitRepo | State |
 |---|---|
-| `lab-node-red` | ✅ adopted 2026-07-29 — no-op, no restart |
 | `lab-emby` | ✅ adopted 2026-07-29 — no-op, no restart |
 | `lab-resilio` | ✅ adopted 2026-07-29 — no-op, no restart |
 | `lab-hermes` | ✅ adopted 2026-07-29 — needed a manual pre-apply; one expected restart |
