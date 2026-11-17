@@ -10,7 +10,9 @@ spec:
   # (replicaCount: 0) and 07-comfyui (replicas: 0) are parked while it runs.
   # Fleet is the source of truth for this number — change it here, not with
   # `kubectl scale`, or the next reconcile puts it back.
-  replicas: 1
+  # PARKED at 0 on 2026-11-17 for the ComfyUI 3D character work (07-comfyui
+  # back at 1 on both V100s). Restore to 1 and comfyui to 0 when done.
+  replicas: 0
   selector:
     matchLabels:
       app: llama-server
