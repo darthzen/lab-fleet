@@ -19,10 +19,7 @@ spec:
   # filebrowser below stays at 1; it is a file UI over the hostPath, no GPU.
   # Fleet is the source of truth for this number — change it here, not with
   # `kubectl scale`, or the next reconcile puts it back.
-  # RUNNING at 1 again on 2026-11-17 for the 3D character work (Hunyuan3D
-  # wrapper + Flux Kontext reference sheets); 26-llama-server is parked at 0
-  # for the duration. Swap back when done.
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app: comfyui
