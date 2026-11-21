@@ -173,7 +173,10 @@ spec:
           value: /home/hermeswebui/.hermes/webui
         - name: HERMES_NIX_BUILD
           value: '1'
-        # 0.52.544 (latest stable) since 2026-10-28, upgraded together with the
+        # 0.52.723 (latest stable) since 2026-11-21, webui-only bump on agent
+        # v0.22.5; its known issues are on agent v0.23.3+ only. Rollback ref:
+        # hermes-webui:0.52.544-ash4d.3@sha256:9d22e8dc...e38.
+        # 0.52.544 since 2026-10-28, upgraded together with the
         # agent as the webui README requires. ash4d.2 builds /app/venv on Python
         # 3.14: agent v0.22 gates its core deps on 3.14, and a 3.12 venv left the
         # agent unimportable (hermes-webui#8113). ash4d.3 also feeds the agent's
@@ -185,7 +188,7 @@ spec:
         # Rebuilt with the toolbelt (hermes-image, Dockerfile.webui). That image
         # pre-builds /app/venv owned by 10000:10000 — keep WANTED_UID/GID above
         # at 10000 or the venv is unwritable at startup.
-        image: registry.ash4d.com/ash4d-lab/hermes-webui:0.52.544-ash4d.3@sha256:9d22e8dcf9b334dd88be64831a885e5a4a06f04b162d9c2151ff3da230828e38
+        image: registry.ash4d.com/ash4d-lab/hermes-webui:0.52.723-ash4d.1@sha256:ab78f873cca499ed664f417fa040c79bf5c6591a2ed14dc91b58309a019a1865
         imagePullPolicy: Always
         name: hermes-webui
         ports:
