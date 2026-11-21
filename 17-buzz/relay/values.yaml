@@ -1,6 +1,6 @@
 # Buzz relay — buzz.ash4d.com. Chart oci://ghcr.io/block/buzz/charts/buzz.
 #   helm template buzz oci://ghcr.io/block/buzz/charts/buzz \
-#     --version 0.1.11 -n buzz -f values.yaml
+#     --version 0.1.13 -n buzz -f values.yaml
 
 # Canonical host. This selects the community: the relay binds
 # resolve_host(request.Host) -> community, and creates a NEW community for any
@@ -25,12 +25,12 @@ replicaCount: 1
 #   crane digest ghcr.io/block/buzz:main
 #   crane config ghcr.io/block/buzz@<digest> | jq '.config.Labels'
 #
-# Current pin: rev 0e6037c7 (main, built 2026-11-12). Security floor is rev
+# Current pin: rev 80131055 (main, built 2026-11-21). Security floor is rev
 # 93114c9c (2026-08-18): RUSTSEC-2026-0216, -0224, -0225..0232 bumps, and
 # authenticated media reads (block/buzz#4610). Do not roll back below it.
 image:
   repository: ghcr.io/block/buzz
-  digest: "sha256:0ccbce1a65a4c149f489004497431f03d40dbb5c3780a8ae24dca66bb8713ae0"
+  digest: "sha256:738ba3edab3ea174c38f4a41c0ce8d5fd0fabd7de5df9ade24a09757c7d392ae"
 
 # Pre-created out-of-band; never in git (this repo is public).
 #

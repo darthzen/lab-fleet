@@ -11,7 +11,7 @@
 #
 # MED RISK: stateful. 3 Deployments (relay, pairing relay, MinIO),
 # 2 StatefulSets (bundled Postgres and Redis), 4 PVCs on the `freezer`
-# StorageClass (reclaimPolicy Retain). Chart 0.1.11 from
+# StorageClass (reclaimPolicy Retain). Chart 0.1.13 from
 # oci://ghcr.io/block/buzz/charts/buzz (note the /charts/ segment).
 #
 # REBUILT 2026-11-12 as a fresh install into an empty namespace; nothing to

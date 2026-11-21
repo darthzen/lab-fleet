@@ -41,6 +41,6 @@ defaultNamespace: buzz
 helm:
   releaseName: buzz
   chart: oci://ghcr.io/block/buzz/charts/buzz
-  version: "0.1.11"
+  version: "0.1.13"
   valuesFiles:
     - values.yaml
