@@ -4,7 +4,7 @@
 #
 # Image: pgsty/silo, a maintained MinIO fork, since the 2026-11-12 rebuild.
 # Upstream minio/minio community images stopped being published, and buzz
-# chart 0.1.9+ moved its own quickstart to Silo. Pin matches chart 0.1.11.
+# chart 0.1.9+ moved its own quickstart to Silo. Pin matches chart 0.1.13 (unchanged since 0.1.11).
 # Server API, env (MINIO_ROOT_*), health paths and /data layout are MinIO's.
 #
 # The Namespace object from that file is deliberately dropped: Fleet creates
