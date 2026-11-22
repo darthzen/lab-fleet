@@ -25,9 +25,10 @@
 # unlike the pre-rebuild layout, where MinIO was a nested child of 17-buzz
 # and came up with its parent no matter what spec.paths said.
 #
-# 17-buzz/gwen (added 2026-11-22) is the concierge agent: one stateless
-# Deployment, a fresh install. It needs a third out-of-band Secret,
-# `buzz-gwen`, and Gwen's pubkey on the relay roster — see
+# 17-buzz/gwen is the concierge agent: Gwen's own service (darthzen/gwen), one
+# Deployment and a 1Gi PVC. Since 2026-11-22 it replaces the Buzz-native build
+# at the same path. It needs two out-of-band Secrets, `gwen` and a copy of
+# `harbor-pull`, and Gwen's pubkey on the relay roster — see
 # 17-buzz/gwen/fleet.yaml. Without the Secret the pod sits in
 # CreateContainerConfigError; nothing else in this GitRepo is affected.
 #
