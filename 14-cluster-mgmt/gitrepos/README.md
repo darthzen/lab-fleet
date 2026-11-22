@@ -58,7 +58,7 @@ adopted, rolled back, or paused independently of every other.
 | `lab-ash4d-origin` | `ash4d-origin` | `16-ash4d-origin` | low |
 | `lab-hermes` | `hermes` | `10-hermes` | low–med — needs `hermes-webui` Secret |
 | `lab-ai` | `ai` | 11 paths (04→09, 21, 26) | med — **no `.yaml` file, staged by hand — see below** |
-| `lab-buzz` | `buzz` | `17-buzz/minio`, `17-buzz/relay` (siblings since the 2026-11-12 rebuild), `17-buzz/gwen` (agent, added 2026-11-22) | med — stateful; needs `buzz-relay` + `buzz-minio-root` Secrets, and `buzz-gwen` for the agent |
+| `lab-buzz` | `buzz` | `17-buzz/minio`, `17-buzz/relay` (siblings since the 2026-11-12 rebuild), `17-buzz/gwen` (agent; own service `darthzen/gwen` since 2026-11-22) | med — stateful; needs `buzz-relay` + `buzz-minio-root` Secrets, and `gwen` + `harbor-pull` for the agent |
 | `lab-cloudflare-tunnel` | `cloudflare-tunnel` | `23-cloudflare-tunnel` | low for the cluster, **high stakes for the public site** — **fresh install, not an adoption**; needs `cloudflared-credentials` Secret |
 | `lab-openai-tunnel` | `openai-tunnel` | `24-openai-tunnel` | low — **fresh install, not an adoption**; one stateless pod; needs `tunnel-client-credentials` Secret |
 | `lab-firecrawl` | `firecrawl` | `25-firecrawl` | med — **fresh install, not an adoption**; needs `firecrawl-nuq-postgres` Secret + DNS |
