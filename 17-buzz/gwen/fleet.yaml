@@ -1,4 +1,6 @@
-# Fleet bundle — Gwen, the concierge agent on the Buzz relay (raw manifests).
+# Fleet bundle — Gwen, the concierge agent on the Buzz relay (raw manifests
+# through kustomize; kustomization.yaml generates her persona ConfigMap from
+# SOUL.md).
 #
 # One pod running Gwen's own service (github.com/darthzen/gwen): a TypeScript
 # agent on the OpenRouter Agent SDK that connects to wss://buzz.ash4d.com as

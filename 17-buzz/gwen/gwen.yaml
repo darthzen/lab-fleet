@@ -1,8 +1,14 @@
 # Gwen — concierge agent on the Buzz relay. Her own service, from
-# github.com/darthzen/gwen; the persona, tools and behaviour live in that repo
-# and are baked into the image. Everything settable is an env var whose name
-# and default are in the repo's src/config.ts; only what differs from a
-# default, or is worth seeing here, is set below.
+# github.com/darthzen/gwen; the tools and behaviour live in that repo and are
+# baked into the image. Everything settable is an env var whose name and
+# default are in the repo's src/config.ts; only what differs from a default,
+# or is worth seeing here, is set below.
+#
+# PERSONA. Her system prompt is SOUL.md in this directory, mounted from a
+# generated ConfigMap. To change her personality, edit SOUL.md and push; the
+# pod rolls by itself. See kustomization.yaml. The copy in the image
+# (persona/SOUL.md in the service repo) is only the default for other
+# adapters, such as the CLI; the deployed Gwen never reads it.
 #
 # IMAGE. Ours, built on SUSE BCI (registry.suse.com/bci/nodejs:22) by the
 # in-cluster kaniko job and pushed to Harbor, so it needs `harbor-pull`.
@@ -116,6 +122,9 @@ spec:
           value: google/gemini-4-hydrogen
         - name: GWEN_DATA_DIR
           value: /data
+        # SOUL.md from this directory; see PERSONA above.
+        - name: GWEN_PERSONA_FILE
+          value: /persona/SOUL.md
         envFrom:
         - secretRef:
             name: gwen
@@ -132,9 +141,16 @@ spec:
           mountPath: /data
         - name: tmp
           mountPath: /tmp
+        - name: persona
+          mountPath: /persona
+          readOnly: true
       volumes:
       - name: data
         persistentVolumeClaim:
           claimName: gwen-data
       - name: tmp
         emptyDir: {}
+      # kustomize appends the content hash to this name.
+      - name: persona
+        configMap:
+          name: gwen-persona
