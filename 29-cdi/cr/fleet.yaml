@@ -13,3 +13,12 @@ helm:
 
 dependsOn:
   - name: lab-cdi-29-cdi-operator
+
+# The CDI object reports `Progressing: False` once it has finished deploying.
+# Fleet reads that condition as "still updating" and kept this bundle NotReady
+# although CDI itself reported Available. Tell Fleet to disregard it; Available
+# and Degraded still count.
+ignore:
+  conditions:
+    - type: Progressing
+      status: "False"
