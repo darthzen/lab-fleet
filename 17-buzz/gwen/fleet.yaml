@@ -1,0 +1,26 @@
+# Fleet bundle — Gwen, the concierge agent on the Buzz relay (raw manifests).
+#
+# One pod: the buzz-acp harness connects to wss://buzz.ash4d.com as Gwen's own
+# Nostr identity, waits for DMs and mentions from the owner, and drives
+# buzz-agent (the ACP worker) over stdio. Inference goes to OpenRouter. Nothing
+# here references llama-server, Ollama or a GPU: the concierge must not depend
+# on the local model (decision 2026-11-22, after the Hermes build of 2026-11-21
+# proved too slow to use).
+#
+# Sibling of ../relay and ../minio, so it can be listed in the lab-buzz GitRepo
+# on its own. See 14-cluster-mgmt/gitrepos/lab-buzz.yaml.
+#
+# PREREQUISITES, all out of band:
+#   1. Secret `buzz-gwen` (BUZZ_PRIVATE_KEY, OPENROUTER_API_KEY) — see
+#      buzz-gwen.secret.example.yaml.txt.
+#   2. Gwen's pubkey on the relay roster:
+#        kubectl exec -n buzz deploy/buzz -- buzz-admin add-member \
+#          --pubkey <hex> --role member
+#   3. The OpenRouter preset named by OPENROUTER_MODEL in gwen.yaml. Until it
+#      exists every model call fails, which is the intent — see gwen.yaml.
+defaultNamespace: buzz
+
+# Fresh install, not an adoption; takeOwnership is here for parity with the
+# other raw-manifest bundles and is a no-op on first sync.
+helm:
+  takeOwnership: true
