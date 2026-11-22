@@ -1,0 +1,20 @@
+# Fleet bundle — Containerized Data Importer operator (raw manifest, vendored).
+#
+# cdi-operator.yaml is the upstream release asset for v1.66.1, byte for byte:
+#   https://github.com/kubevirt/containerized-data-importer/releases/download/v1.66.1/cdi-operator.yaml
+# To upgrade, replace the file with the next release's asset.
+#
+# CDI is KubeVirt's disk importer. It adds the DataVolume resource, which
+# downloads an OS image from a URL and writes it onto a PersistentVolumeClaim.
+# That is how a VM gets a persistent root disk on Longhorn; without CDI a VM
+# can only boot a throwaway containerDisk.
+#
+# It creates the `cdi` Namespace, the CDI CRD, RBAC and the cdi-operator
+# Deployment. Nothing else runs until the CDI custom resource in ../cr exists.
+#
+# 🔴 This bundle owns the CDI CRD. Removing the path deletes it. Pause the
+#    GitRepo instead.
+defaultNamespace: cdi
+
+helm:
+  takeOwnership: true

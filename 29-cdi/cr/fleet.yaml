@@ -1,0 +1,15 @@
+# Fleet bundle — the CDI custom resource (raw manifest).
+#
+# cdi-cr.yaml is the upstream v1.66.1 asset, unchanged. The operator in
+# ../operator reads it and deploys cdi-apiserver, cdi-deployment and
+# cdi-uploadproxy into the `cdi` namespace.
+#
+# Needs the CRD from ../operator, hence dependsOn. The CDI object itself is
+# cluster-scoped; defaultNamespace only places Fleet's release record.
+defaultNamespace: cdi
+
+helm:
+  takeOwnership: true
+
+dependsOn:
+  - name: lab-cdi-29-cdi-operator
