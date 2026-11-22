@@ -4,9 +4,13 @@
 # reads it and deploys virt-api, virt-controller and the virt-handler
 # DaemonSet into the `kubevirt` namespace.
 #
-# kubevirt-cr.yaml is the upstream v1.10.0 asset with one change, marked in
-# the file: a single replica of the control-plane pods, because sdf1 is a
-# one-node cluster and a second replica only costs memory.
+# kubevirt-cr.yaml is the upstream v1.10.0 asset with two changes, each marked
+# LOCAL CHANGE in the file: a single replica of the control-plane pods (sdf1
+# is one node), and an empty developerConfiguration written the way the
+# cluster stores it so Fleet sees no drift.
+#
+# virt-template-controller crash-loops until CDI (29-cdi) is installed: it
+# watches CDI's DataVolume kind and exits when that kind is missing.
 #
 # Needs the CRD from ../operator, hence dependsOn.
 defaultNamespace: kubevirt
