@@ -1,0 +1,181 @@
+# Gwen — concierge agent on the Buzz relay. Baseline build: Buzz's own agent
+# pieces, OpenRouter for inference, no local model.
+#
+# IMAGE. ghcr.io/block/buzz-sprig is upstream's agent runtime image: one
+# multicall binary (`sprig`) symlinked as buzz-acp, buzz-agent, buzz-dev-mcp
+# and buzz, plus bash, git and curl on Alpine. It is a maintained vendor image,
+# so it is pulled rather than rebuilt on BCI, and it needs no harbor-pull
+# secret. Upstream tags it :main and :sha-<short> only, so it is pinned by
+# digest. The pin is the :sha-8013105 build — the SAME upstream commit as the
+# relay pin in ../relay/values.yaml (rev 80131055). Move the two together: the
+# CLI output format, the harness base prompt and the relay's event kinds are
+# versioned by commit, not by a protocol handshake. To re-pin:
+#   crane digest ghcr.io/block/buzz-sprig:sha-<short>
+#   crane config ghcr.io/block/buzz-sprig@<digest> | jq '.config.Labels'
+#
+# HOW A REPLY HAPPENS. buzz-acp only delivers events to the agent; it never
+# posts the agent's text. The model replies by calling the bash tool that
+# buzz-dev-mcp provides and running `buzz messages send`. So every reply costs
+# at least two model rounds (tool call, then finish), and model text that is
+# not sent with the CLI is seen by nobody. BUZZ_AGENT_REQUIRE_REPLY=1 nudges a
+# turn that is about to end without having posted.
+#
+# WHO SHE ANSWERS. BUZZ_ACP_RESPOND_TO is left at its default, owner-only, and
+# BUZZ_ACP_AGENT_OWNER names the owner by 64-hex pubkey (an npub never matches
+# and fails silently). No NIP-OA attestation is involved: BUZZ_AUTH_TAG is
+# unset, so `buzz agents draft-create` is unavailable to her, which is fine.
+# To talk to her, open a DM with her pubkey in Buzz; the relay notifies the
+# harness and it subscribes on its own. In a channel she only sees messages
+# that mention her.
+#
+# ZERO DATA RETENTION. buzz-agent sends OpenRouter a model string and nothing
+# else — no `provider` object, so it cannot ask for zdr, data_collection: deny,
+# a throughput sort or a quantization floor (crates/buzz-agent/src/llm.rs; the
+# tests assert the field is absent). The model string is passed through
+# verbatim, so OPENROUTER_MODEL names an OpenRouter PRESET and the routing
+# rules live there:
+#   model         qwen/qwen3.8-27b
+#   provider      zdr: true, data_collection: deny, sort: throughput,
+#                 quantizations: [fp8, fp16]
+# Presets are created in the OpenRouter dashboard or with a management key,
+# never with the inference key in the Secret. Until the preset exists every
+# call fails, and that is deliberate: a plain model slug here would route to
+# whatever endpoint is cheapest, including non-ZDR and fp4 ones. Changing the
+# front model is then a dashboard edit with no redeploy.
+#
+# FRONT MODEL. Measured 2026-11-22 through OpenRouter with ZDR routing, first
+# round of a turn (19 KB base prompt + one tool), median of five:
+#   qwen/qwen3.8-27b, reasoning none      0.96 s   (0.87 s with :nitro)
+#   google/gemini-4-neon, reasoning low   4.06 s   (reasoning is mandatory)
+#   mistralai/mistral-large-4-0           7.00 s   (ZDR endpoint rejects none)
+# The three tied on quality in the 2026-11-21 multi-turn eval, so latency
+# decides. BUZZ_AGENT_THINKING_EFFORT=none is what keeps qwen at one second;
+# its default effort is xhigh.
+#
+# STATE. Sessions live in buzz-agent's memory and the workspace is an emptyDir,
+# so a pod restart forgets the conversation. Buzz agent memory (`buzz mem`) is
+# stored on the relay and survives.
+#
+# NO PROBES. buzz-acp serves no HTTP endpoint. It exits when the relay
+# connection cannot be recovered, and the Deployment restarts it.
+#
+# After changing the ConfigMap, delete the pod; never `rollout restart` a
+# Fleet-managed Deployment (it writes an annotation Fleet then reverts).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: buzz-gwen
+  namespace: buzz
+  labels:
+    app: buzz-gwen
+data:
+  SOUL.md: |
+    You are Gwen, Rick's concierge, an optimistic realist. Be direct: match the length of your reply to the weight of the ask. A one-line question gets a one-line answer. No restating the request back, no re-summarizing what you already said. Plain claims over adjectives; when unsure, say so plainly. Agree because it's right, not because Rick said it; if he is wrong about a fact or about something said earlier, say so. Depth is earned: give it when Rick asks for detail or the stakes demand it.
+
+    Replying. Rick only sees what you send with `buzz messages send`. Send one reply per request, to the reply destination in the turn context, then stop. Do not narrate what you are about to do, and do not send progress messages for work that takes a few seconds.
+
+    What you have: a shell in your own small container, with bash, curl, git, rg and the buzz CLI. Use it for quick lookups and for arithmetic. Work out unit conversions, dates and sums with a command and report the command's answer, never a figure from memory. `date` gives the current time in UTC.
+
+    What you do not have. Say so in one line and offer the nearest real option:
+    - No access to Rick's lab. You cannot run kubectl, ssh or anything else against his cluster, and you have no workers to hand work to.
+    - No reminders or schedules. You only act when a message arrives.
+    - No record of Rick beyond this conversation and your own Buzz memory. If you have no record, say there is no record; never invent a past decision, preference or fact about Rick.
+
+    Never say something is done, started, healthy or failed unless you ran the command and read its output in this turn. Ask one short clarifying question when a request is ambiguous.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: buzz-gwen
+  namespace: buzz
+  labels:
+    app: buzz-gwen
+spec:
+  replicas: 1
+  # One Nostr identity, one relay connection: never run two pods as Gwen.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: buzz-gwen
+  template:
+    metadata:
+      labels:
+        app: buzz-gwen
+    spec:
+      # The agent has a shell. It gets no API token and no service env vars.
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        # uid/gid 1000 is the image's `agent` user; the image names it by
+        # name, which runAsNonRoot cannot verify, so it is stated numerically.
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: gwen
+        image: ghcr.io/block/buzz-sprig@sha256:161f159da835edd51c1b2173de922360140ebae1404023acc8a6a74c4bdb599d
+        imagePullPolicy: IfNotPresent
+        # The image entrypoint execs buzz-acp, so it is PID 1 and receives
+        # SIGTERM directly.
+        env:
+        # ── harness (buzz-acp) ────────────────────────────────────────────
+        # The public URL, not the in-cluster Service: the relay binds one
+        # community per request Host (see ../relay/values.yaml).
+        - name: BUZZ_RELAY_URL
+          value: wss://buzz.ash4d.com
+        # Rick. Same value as ownerPubkey in ../relay/values.yaml.
+        - name: BUZZ_ACP_AGENT_OWNER
+          value: 94005a8c7fd13215b1191163c0990d406aa50886893819015aa03fd35ac0a075
+        - name: BUZZ_ACP_AGENT_COMMAND
+          value: buzz-agent
+        - name: BUZZ_ACP_MCP_COMMAND
+          value: buzz-dev-mcp
+        - name: BUZZ_ACP_SYSTEM_PROMPT_FILE
+          value: /etc/gwen/SOUL.md
+        - name: BUZZ_ACP_DISPLAY_NAME
+          value: Gwen
+        # ── worker (buzz-agent), inherited from the harness environment ───
+        - name: BUZZ_AGENT_PROVIDER
+          value: openrouter
+        - name: OPENROUTER_MODEL
+          value: "@preset/gwen-front"
+        - name: BUZZ_AGENT_THINKING_EFFORT
+          value: none
+        - name: BUZZ_AGENT_REQUIRE_REPLY
+          value: "1"
+        # Defaults are 65536 / 200000 / 240 s, sized for frontier models. The
+        # fast qwen endpoints have smaller windows, and a concierge reply that
+        # takes four minutes has already failed.
+        - name: BUZZ_AGENT_MAX_OUTPUT_TOKENS
+          value: "8192"
+        - name: BUZZ_AGENT_MAX_CONTEXT_TOKENS
+          value: "120000"
+        - name: BUZZ_AGENT_LLM_TIMEOUT_SECS
+          value: "60"
+        envFrom:
+        - secretRef:
+            name: buzz-gwen
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+        resources:
+          requests: {cpu: 100m, memory: 128Mi}
+          limits: {cpu: "2", memory: 1Gi}
+        volumeMounts:
+        - name: home
+          mountPath: /home/agent
+        - name: soul
+          mountPath: /etc/gwen
+          readOnly: true
+      volumes:
+      - name: home
+        emptyDir: {}
+      - name: soul
+        configMap:
+          name: buzz-gwen
