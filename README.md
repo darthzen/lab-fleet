@@ -100,6 +100,8 @@ flowchart TD
 | 25 | Firecrawl self-hosted crawl/scrape API | raw manifests (upstream k8s example, adapted) | 2.11.227 |
 | 26 | llama.cpp server — Qwen3.8-27B-Uncensored Q8_0 + MTP on both V100s (Flash-Next parked on disk) | ghcr.io/ggml-org/llama.cpp server-cuda | b11058 (CUDA 12.8.1) |
 | 27 | SearXNG metasearch — search backend for Hermes and Firecrawl (LAN-only) | docker.io/searxng/searxng | 2026.10.28-c360868e5 |
+| 28 | KubeVirt — virtual machines as pods (first user: Gwen's sandbox VM) | raw manifests (upstream release assets, vendored) | v1.10.0 |
+| 29 | CDI (Containerized Data Importer) — imports OS images onto PVCs for KubeVirt | raw manifests (upstream release assets, vendored) | v1.66.1 |
 
 ### Directory numbers 15+ are append-order, not install-order
 

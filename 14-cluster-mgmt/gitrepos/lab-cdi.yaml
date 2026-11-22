@@ -1,0 +1,35 @@
+# Fleet GitRepo — cdi namespace.
+#
+# A Fleet `GitRepo` custom resource on the RANCHER CONTROLLER (kubectl context
+# `rancher`), not part of any bundle here.
+#
+#   kubectl --context rancher apply -f 14-cluster-mgmt/gitrepos/lab-cdi.yaml
+#
+# FRESH INSTALL (2026-11-22), not an adoption. Containerized Data Importer
+# v1.66.1 is KubeVirt's disk importer: it provides DataVolume, which writes a
+# downloaded OS image onto a PVC so a VM can have a persistent root disk.
+#
+# Two SIBLING paths, staged the same way as lab-kubevirt: operator first, then
+# the CDI object in 29-cdi/cr (dependsOn the operator bundle).
+#
+# 🔴 Do NOT remove a path to roll back: that deletes the CRD and every
+#    DataVolume. Use spec.paused. See gitrepos/README.md.
+apiVersion: fleet.cattle.io/v1alpha1
+kind: GitRepo
+metadata:
+  name: lab-cdi
+  namespace: fleet-default
+spec:
+  repo: https://github.com/darthzen/lab-fleet
+  branch: main
+  # Explicit interval; see lab-buzz.yaml and FLEET-WIRING.md for why.
+  pollingInterval: 60s
+  paths:
+    - 29-cdi/cr
+    - 29-cdi/operator
+  targets:
+    - clusterSelector:
+        matchLabels:
+          ash4d-lab: ""
+  correctDrift:
+    enabled: true

@@ -1,0 +1,19 @@
+---
+apiVersion: kubevirt.io/v1
+kind: KubeVirt
+metadata:
+  name: kubevirt
+  namespace: kubevirt
+spec:
+  certificateRotateStrategy: {}
+  configuration:
+    developerConfiguration:
+      featureGates: []
+    imagePullPolicy: IfNotPresent
+  customizeComponents: {}
+  # LOCAL CHANGE (the only one): one replica of virt-api and virt-controller.
+  # sdf1 is a single node, so a second replica adds memory and no availability.
+  infra:
+    replicas: 1
+  imagePullPolicy: IfNotPresent
+  workloadUpdateStrategy: {}

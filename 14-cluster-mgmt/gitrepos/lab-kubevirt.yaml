@@ -1,0 +1,38 @@
+# Fleet GitRepo — kubevirt namespace.
+#
+# A Fleet `GitRepo` custom resource on the RANCHER CONTROLLER (kubectl context
+# `rancher`), not part of any bundle here.
+#
+#   kubectl --context rancher apply -f 14-cluster-mgmt/gitrepos/lab-kubevirt.yaml
+#
+# FRESH INSTALL (2026-11-22), not an adoption. KubeVirt v1.10.0 runs virtual
+# machines as pods; the first user is Gwen's sandbox VM.
+#
+# Two SIBLING paths. 28-kubevirt/operator installs the CRD and virt-operator;
+# 28-kubevirt/cr holds the one KubeVirt object that switches the rest on, and
+# declares dependsOn the operator bundle. On a rebuild, stage them: apply with
+# only the operator path, wait for the Deployment, then apply this file whole.
+#
+# MED RISK: cluster-scoped CRDs and a privileged DaemonSet (virt-handler).
+#
+# 🔴 Do NOT remove a path to roll back: that deletes the CRD and every VM.
+#    Use spec.paused. See gitrepos/README.md.
+apiVersion: fleet.cattle.io/v1alpha1
+kind: GitRepo
+metadata:
+  name: lab-kubevirt
+  namespace: fleet-default
+spec:
+  repo: https://github.com/darthzen/lab-fleet
+  branch: main
+  # Explicit interval; see lab-buzz.yaml and FLEET-WIRING.md for why.
+  pollingInterval: 60s
+  paths:
+    - 28-kubevirt/cr
+    - 28-kubevirt/operator
+  targets:
+    - clusterSelector:
+        matchLabels:
+          ash4d-lab: ""
+  correctDrift:
+    enabled: true

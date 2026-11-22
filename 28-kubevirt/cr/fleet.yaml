@@ -1,0 +1,18 @@
+# Fleet bundle — the KubeVirt custom resource (raw manifest).
+#
+# This one object is what turns KubeVirt on: the operator in ../operator
+# reads it and deploys virt-api, virt-controller and the virt-handler
+# DaemonSet into the `kubevirt` namespace.
+#
+# kubevirt-cr.yaml is the upstream v1.10.0 asset with one change, marked in
+# the file: a single replica of the control-plane pods, because sdf1 is a
+# one-node cluster and a second replica only costs memory.
+#
+# Needs the CRD from ../operator, hence dependsOn.
+defaultNamespace: kubevirt
+
+helm:
+  takeOwnership: true
+
+dependsOn:
+  - name: lab-kubevirt-28-kubevirt-operator

@@ -1,0 +1,25 @@
+# Fleet bundle — KubeVirt operator (raw manifest, vendored).
+#
+# kubevirt-operator.yaml is the upstream release asset for v1.10.0, byte for
+# byte:
+#   https://github.com/kubevirt/kubevirt/releases/download/v1.10.0/kubevirt-operator.yaml
+# Vendored because upstream publishes no Helm chart. To upgrade, replace the
+# file with the next release's asset and change nothing by hand.
+#
+# It creates the `kubevirt` Namespace, the KubeVirt CRD, RBAC and the
+# virt-operator Deployment. It runs no virtualization by itself: the operator
+# deploys virt-api, virt-controller and virt-handler only once the KubeVirt
+# custom resource in ../cr exists.
+#
+# WHY THIS EXISTS: Gwen's sandbox is a virtual machine (Rick, 2026-11-22).
+# sdf1 has /dev/kvm since SVM was enabled in the BIOS.
+#
+# Sibling of ../cr so the two can be staged one at a time — see
+# 14-cluster-mgmt/gitrepos/lab-kubevirt.yaml.
+#
+# 🔴 This bundle owns the KubeVirt CRD. Removing the path deletes the CRD and
+#    with it every VirtualMachine in the cluster. Pause the GitRepo instead.
+defaultNamespace: kubevirt
+
+helm:
+  takeOwnership: true
