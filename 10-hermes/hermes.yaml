@@ -78,16 +78,9 @@ spec:
             secretKeyRef:
               key: SLACK_ALLOWED_USERS
               name: hermes-slack
-        # Jev (TypeSafe System One) — Rick's standing rule since 2026-09-22:
-        # hermes consults Jev for every decision, whatever model it runs on.
-        # The skill at /opt/data/skills/decisions/jev on the PVC reads this;
-        # the Secret is created by hand (README), never committed. Chosen over
-        # a line in /opt/data/.env so the key survives a PVC rebuild.
-        - name: JEV_API_KEY
-          valueFrom:
-            secretKeyRef:
-              key: api_key
-              name: hermes-jev
+        # No JEV_API_KEY here since 2026-11-21: every Hermes profile reaches
+        # Jev through the jev-mcp server (09-mcp/jev), so the TypeSafe key
+        # lives only in Secret ai/jev-mcp. The hermes-jev Secret is unused.
         # v0.22.5 since 2026-10-28 (was v0.21.5): security fixes, cache-
         # preserving compaction, llama.cpp streaming/retry fixes. v0.22 moved
         # uv under Hermes' pm; hermes-image links it back onto PATH.
@@ -158,17 +151,6 @@ spec:
             secretKeyRef:
               key: password
               name: hermes-webui
-        # Jev key for the UI as well. The UI runs its own copy of the agent
-        # off the shared volume, so chats through it never saw the agent
-        # container's JEV_API_KEY: on 2026-09-22 Qwen in the web UI reported
-        # it "could not read the hermes-jev Secret" and went hunting for the
-        # key. The UI's env loader only obfuscates *KEY* names in its log;
-        # the value itself passes through to the agent process.
-        - name: JEV_API_KEY
-          valueFrom:
-            secretKeyRef:
-              key: api_key
-              name: hermes-jev
         - name: HERMES_WEBUI_STATE_DIR
           value: /home/hermeswebui/.hermes/webui
         - name: HERMES_NIX_BUILD

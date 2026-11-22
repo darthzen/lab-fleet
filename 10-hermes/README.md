@@ -8,11 +8,9 @@
       --from-literal=SLACK_ALLOWED_USERS=<user-ids>
     kubectl -n hermes create secret generic hermes-webui \
       --from-literal=password="$(openssl rand -base64 24)"     # see .example file
-    kubectl -n hermes create secret generic hermes-jev \
-      --from-literal=api_key="$(tr -d '\n' < $HOME/Developer/keys/jev/claude.key)"  # TypeSafe/Jev
-    # NOT --from-file: the key file ends in a newline, and the hermes-webui
-    # init script re-reads its environment line by line and dies on the empty
-    # line ("invalid variable name"), crash-looping the UI (2026-09-22).
+    # No hermes-jev Secret since 2026-11-21: Hermes reaches Jev through the
+    # jev-mcp server, whose Secret ai/jev-mcp holds the only TypeSafe key
+    # (keys/jev/hermes.key). See 09-mcp/jev.
     # ssh key for the lab hosts. --from-file is correct here: these are mounted
     # as files, not env vars. The ssh-key init container copies them into an
     # emptyDir owned by uid 10000 with mode 0600, which ssh requires.
