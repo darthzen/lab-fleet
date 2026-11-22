@@ -6,9 +6,9 @@
 #
 # PERSONA. Her system prompt is SOUL.md in this directory, mounted from a
 # generated ConfigMap. To change her personality, edit SOUL.md and push; the
-# pod rolls by itself. See kustomization.yaml. The copy in the image
-# (persona/SOUL.md in the service repo) is only the default for other
-# adapters, such as the CLI; the deployed Gwen never reads it.
+# pod rolls by itself. See kustomization.yaml. This is the only copy: the
+# service repo holds a pointer to this file (persona/README.txt) and the
+# service refuses to start without GWEN_PERSONA_FILE.
 #
 # IMAGE. Ours, built on SUSE BCI (registry.suse.com/bci/nodejs:22) by the
 # in-cluster kaniko job and pushed to Harbor, so it needs `harbor-pull`.
