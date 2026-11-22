@@ -1,0 +1,24 @@
+# Gwen's persona as a ConfigMap generated from SOUL.md in this directory.
+#
+# TO CHANGE HER PERSONALITY: edit SOUL.md, commit, push to main. Nothing else.
+#
+# The generator names the ConfigMap gwen-persona-<hash of its content> and
+# rewrites the reference in the Deployment to match, so a changed SOUL.md is a
+# changed pod template: Fleet rolls the pod and the service reads the new file
+# at start. No image build, no tag bump, no manual restart. Fleet removes the
+# ConfigMap with the old hash in the same sync.
+#
+# Fleet runs kustomize because this file exists; it lists every manifest in
+# the bundle, so a new manifest in this directory must be added to `resources`.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- gwen.yaml
+configMapGenerator:
+- name: gwen-persona
+  namespace: buzz
+  files:
+  - SOUL.md
+generatorOptions:
+  labels:
+    app: gwen
