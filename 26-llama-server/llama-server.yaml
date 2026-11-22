@@ -6,11 +6,14 @@ metadata:
   name: llama-server
   namespace: ai
 spec:
-  # Running as of 2026-09-20. This takes both V100s, so 04-ollama
-  # (replicaCount: 0) and 07-comfyui (replicas: 0) are parked while it runs.
+  # PARKED at 0 since 2026-11-22 (Rick): the local LLM is not in use, and the
+  # pod held about 30 GiB of RAM and both V100s that Gwen's sandbox VM and
+  # other work can use. Set this to 1 to bring it back; the model files stay
+  # on disk. While it runs it takes both V100s, so 04-ollama (replicaCount: 0)
+  # and 07-comfyui (replicas: 0) must stay parked.
   # Fleet is the source of truth for this number — change it here, not with
   # `kubectl scale`, or the next reconcile puts it back.
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app: llama-server
