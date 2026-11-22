@@ -18,3 +18,24 @@ defaultNamespace: cdi
 
 helm:
   takeOwnership: true
+
+# The upstream manifest labels its Role and RoleBinding
+# `app.kubernetes.io/managed-by: cdi-operator`. Fleet deploys through Helm,
+# which always rewrites that label to `Helm`, so the two objects can never
+# match the file. Without this, the bundle stays Modified forever and
+# ../cr (dependsOn this bundle) never deploys. Ignoring the one label keeps
+# the vendored file byte-for-byte upstream.
+diff:
+  comparePatches:
+    - apiVersion: rbac.authorization.k8s.io/v1
+      kind: Role
+      name: cdi-operator
+      namespace: cdi
+      jsonPointers:
+        - /metadata/labels/app.kubernetes.io~1managed-by
+    - apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      name: cdi-operator
+      namespace: cdi
+      jsonPointers:
+        - /metadata/labels/app.kubernetes.io~1managed-by

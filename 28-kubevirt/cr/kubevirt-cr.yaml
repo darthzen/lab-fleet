@@ -7,11 +7,13 @@ metadata:
 spec:
   certificateRotateStrategy: {}
   configuration:
-    developerConfiguration:
-      featureGates: []
+    # LOCAL CHANGE: upstream writes `featureGates: []` here. The API server
+    # drops the empty list, so Fleet saw permanent drift and kept this bundle
+    # NotReady. An empty object is what the cluster stores.
+    developerConfiguration: {}
     imagePullPolicy: IfNotPresent
   customizeComponents: {}
-  # LOCAL CHANGE (the only one): one replica of virt-api and virt-controller.
+  # LOCAL CHANGE: one replica of virt-api and virt-controller.
   # sdf1 is a single node, so a second replica adds memory and no availability.
   infra:
     replicas: 1
