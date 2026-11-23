@@ -1,0 +1,57 @@
+# Gwen's identity in the cluster, used by kubectl on her VM (gwen-sandbox).
+#
+# Rick's decision, 2026-11-23: Gwen gets cluster-admin, and she reaches the
+# cluster with kubectl from her own machine through her sandbox_run tool. No
+# MCP server and no change to her service.
+#
+# 🔴 This is every right in the cluster, including every Secret. Her front
+# model reads web pages, so text planted in a page can steer these rights.
+# Fleet puts back what she edits on a Fleet-managed resource; a delete of data
+# or a read of a Secret is not undone.
+#
+# HOW IT IS WIRED. The token Secret below is a long-lived ServiceAccount token
+# (it does not expire). Its value is in ~/.kube/config on the VM, mode 0600,
+# with the API server at https://kubernetes.default.svc.cluster.local and the
+# cluster CA. Nothing else holds a copy.
+#
+# TO TAKE THE ACCESS AWAY: delete the ClusterRoleBinding (she keeps a valid
+# login with no rights), or delete the Secret `gwen-token` (the token stops
+# working at once). To rotate: delete the Secret, let Fleet recreate it, and
+# put the new value in the kubeconfig on the VM:
+#   kubectl -n buzz get secret gwen-token -o jsonpath='{.data.token}' | base64 -d
+#
+# To narrow her instead, replace `cluster-admin` below with `view` (read-only,
+# no Secrets) and add RoleBindings to `admin` in the namespaces she may change.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gwen
+  namespace: buzz
+  labels:
+    app: gwen-sandbox
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gwen-token
+  namespace: buzz
+  labels:
+    app: gwen-sandbox
+  annotations:
+    kubernetes.io/service-account.name: gwen
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gwen-cluster-admin
+  labels:
+    app: gwen-sandbox
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: gwen
+  namespace: buzz
