@@ -1,0 +1,35 @@
+# Fleet bundle — Gwen's sandbox: a KubeVirt virtual machine (raw manifests).
+#
+# A full openSUSE Leap 16.0 machine that belongs to Gwen: her own kernel,
+# systemd, zypper and a root disk that keeps every change. She reaches it over
+# SSH at gwen-sandbox.buzz.svc:22 as user `gwen` (passwordless sudo). Rick chose
+# a VM over a container on 2026-11-22 for the isolation and so she can mount
+# filesystems and roll back snapshots herself.
+#
+# Needs KubeVirt (28-kubevirt) and CDI (29-cdi).
+#
+# STORAGE: the 20Gi root disk is a sparse image on the `local-path` class,
+# which lives on the 9100 PRO NVMe at /var/lib/rancher/k3s/storage. Rick asked
+# for a small disk on the fastest storage; bulk space is to come from /data
+# over NFS later. Two things follow from local-path:
+#   - That directory carries `chattr +C` on the host (set 2026-11-22), so the
+#     disk image is not copy-on-write. A VM image on copy-on-write btrfs
+#     fragments badly.
+#   - 🔴 local-path's reclaim policy is Delete. Removing this path from the
+#     GitRepo, or deleting the VirtualMachine, DELETES HER DISK. Pause the
+#     GitRepo instead. There is no Longhorn snapshot or backup of it.
+#
+# SSH KEY: her key pair is in ~/Developer/keys/gwen-sandbox/. The public half
+# is in gwen-sandbox.yaml (public keys are not secret). The private half is the
+# out-of-band Secret `gwen-sandbox-ssh` in this namespace, for her service to
+# mount once it has a shell tool:
+#   kubectl -n buzz create secret generic gwen-sandbox-ssh \
+#     --from-file=id_ed25519=$HOME/Developer/keys/gwen-sandbox/id_ed25519 \
+#     --from-file=id_ed25519.pub=$HOME/Developer/keys/gwen-sandbox/id_ed25519.pub
+#
+# cloud-init runs on FIRST BOOT ONLY. Editing the userData below changes
+# nothing on a disk that has already booted; change the machine itself.
+defaultNamespace: buzz
+
+helm:
+  takeOwnership: true

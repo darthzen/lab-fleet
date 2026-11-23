@@ -1,0 +1,102 @@
+# Gwen's sandbox VM and the Service her agent uses to reach it.
+# Read fleet.yaml first: it explains the storage and the delete hazard.
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: gwen-sandbox
+  namespace: buzz
+  labels:
+    app: gwen-sandbox
+spec:
+  # Always: KubeVirt restarts the VM if it stops, including after a node reboot.
+  runStrategy: Always
+
+  # The root disk. CDI downloads the image once, converts it and writes it to a
+  # new PVC. After that the PVC is the machine; the URL is never read again.
+  dataVolumeTemplates:
+    - metadata:
+        name: gwen-sandbox-root
+      spec:
+        source:
+          http:
+            # Pinned build. sha256 cdf1e5eefc20b7479059eb7ef12694e395d787168a11792997a0209499084ae5
+            url: https://download.opensuse.org/distribution/leap/16.0/appliances/Leap-16.0-Minimal-VM.x86_64-Cloud-Build18.95.qcow2
+        pvc:
+          storageClassName: local-path
+          accessModes:
+            - ReadWriteOnce
+          volumeMode: Filesystem
+          resources:
+            requests:
+              storage: 20Gi
+
+  template:
+    metadata:
+      labels:
+        app: gwen-sandbox
+    spec:
+      domain:
+        cpu:
+          cores: 4
+        memory:
+          guest: 8Gi
+        devices:
+          disks:
+            - name: root
+              disk:
+                bus: virtio
+            - name: cloudinit
+              disk:
+                bus: virtio
+          interfaces:
+            # masquerade: the VM sits behind the pod's IP, so Services and
+            # NetworkPolicies treat it like any other pod.
+            - name: default
+              masquerade: {}
+          rng: {}
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: root
+          dataVolume:
+            name: gwen-sandbox-root
+        - name: cloudinit
+          cloudInitNoCloud:
+            userData: |
+              #cloud-config
+              hostname: gwen-sandbox
+              users:
+                - name: gwen
+                  gecos: Gwen
+                  groups: [wheel]
+                  shell: /bin/bash
+                  sudo: "ALL=(ALL) NOPASSWD:ALL"
+                  lock_passwd: true
+                  ssh_authorized_keys:
+                    - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOEuaIc1tPwngwQbK7cYKIranYtCmRQ/0Tsvh+tckMx5 gwen@gwen-sandbox
+              ssh_pwauth: false
+              disable_root: true
+              growpart:
+                mode: auto
+                devices: ["/"]
+              packages:
+                - qemu-guest-agent
+              runcmd:
+                - systemctl enable --now qemu-guest-agent
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gwen-sandbox
+  namespace: buzz
+  labels:
+    app: gwen-sandbox
+spec:
+  type: ClusterIP
+  selector:
+    app: gwen-sandbox
+  ports:
+    - name: ssh
+      port: 22
+      targetPort: 22
