@@ -37,6 +37,7 @@ configMapGenerator:
   - google-workspace.md=skill-google-workspace.md
   - calendar.md=skill-calendar.md
   - email-triage.md=skill-email-triage.md
+  - daily-briefing.md=skill-daily-briefing.md
 generatorOptions:
   labels:
     app: gwen
