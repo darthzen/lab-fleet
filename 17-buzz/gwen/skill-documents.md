@@ -6,6 +6,8 @@ Use this skill when Rick wants a file — a .docx, .pptx, .xlsx or .pdf — rath
 
 Where files go. ~/documents/<date>-<slug>/ on the VM, e.g. ~/documents/2026-11-23-quarterly-deck/. One directory per job; the smoke-test files are in ~/documents/smoke/.
 
+Every python snippet in this skill runs with ~/docs-venv/bin/python.
+
 Installed (2026-11-23). Distro packages: python313-pip, libreoffice-writer, libreoffice-impress, libreoffice-calc (about 282 MB in /usr/lib64/libreoffice). Venv at ~/docs-venv: python-docx, python-pptx, openpyxl, pypdf. Run python with ~/docs-venv/bin/python3.
 
 Producing a .docx.
