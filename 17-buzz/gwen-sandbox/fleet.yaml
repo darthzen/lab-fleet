@@ -33,6 +33,9 @@
 # so a REBUILT VM needs all of it again:
 #   - Tools: podman, helm, git from zypper; kubectl v1.35.6 from dl.k8s.io in
 #     /usr/local/bin (Leap 16.0 has no kubectl package).
+#   - Documents (2026-11-23): python313-pip, libreoffice-writer,
+#     libreoffice-impress, libreoffice-calc from zypper; venv at ~/docs-venv
+#     with python-docx, python-pptx, openpyxl, pypdf.
 #   - Kubernetes: ~/.kube/config holds the token of ServiceAccount buzz/gwen,
 #     which is cluster-admin. See gwen-cluster-access.yaml in this directory.
 #   - Harbor: robot account `robot$ash4d-lab+gwen`, push and pull in project

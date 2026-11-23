@@ -33,6 +33,7 @@ configMapGenerator:
   - github.md=skill-github.md
   - kubernetes.md=skill-kubernetes.md
   - model-hosting.md=skill-model-hosting.md
+  - documents.md=skill-documents.md
 generatorOptions:
   labels:
     app: gwen
