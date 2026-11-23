@@ -66,7 +66,7 @@
 # Removing GWEN_SANDBOX_HOST takes the tool away; the rest of Gwen runs on.
 #
 # SKILLS (0.7.0, Rick 2026-11-23). Procedures she reads only when a job needs
-# one, so they stay out of SOUL.md. Each is a markdown file in skills/ in this
+# one, so they stay out of SOUL.md. Each is a skill-<name>.md file in this
 # directory, mounted at /skills from a generated ConfigMap (kustomization.yaml).
 # Her instructions carry one line per skill; she reads a body with load_skill.
 # A skill can name MCP servers with `mcp:` header lines; their tools are listed

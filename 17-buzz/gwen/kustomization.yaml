@@ -19,15 +19,17 @@ configMapGenerator:
   namespace: buzz
   files:
   - SOUL.md
-# Her skills, the same way: one ConfigMap generated from the files in skills/,
-# mounted at /skills. TO CHANGE OR ADD A SKILL: edit or add a file in skills/,
-# list a new file below, commit, push to main. The pod rolls by itself. The
-# file format is at the top of src/skills.ts in darthzen/gwen.
+# Her skills, the same way: one ConfigMap generated from the skill-*.md files
+# in this directory, mounted at /skills. TO CHANGE A SKILL: edit its file,
+# commit, push to main. TO ADD ONE: add skill-<name>.md and a line below of the
+# form `<name>.md=skill-<name>.md`. The pod rolls by itself. The file format is
+# at the top of src/skills.ts in darthzen/gwen. The files sit beside this one
+# because Fleet's kustomize refuses a file in a subdirectory.
 - name: gwen-skills
   namespace: buzz
   files:
-  - skills/build-image.md
-  - skills/kubernetes.md
+  - build-image.md=skill-build-image.md
+  - kubernetes.md=skill-kubernetes.md
 generatorOptions:
   labels:
     app: gwen
