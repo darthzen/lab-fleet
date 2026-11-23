@@ -32,6 +32,11 @@
 # 17-buzz/gwen/fleet.yaml. Without the Secret the pod sits in
 # CreateContainerConfigError; nothing else in this GitRepo is affected.
 #
+# 17-buzz/gwen-sandbox is Gwen's own machine: a KubeVirt VM (Leap 16.0, 4 vCPU,
+# 8Gi, 20Gi root disk on local-path NVMe), added 2026-11-22. It needs KubeVirt
+# and CDI (lab-kubevirt, lab-cdi). Removing this path DELETES HER DISK — see
+# 17-buzz/gwen-sandbox/fleet.yaml.
+#
 # 🔴 Do NOT roll back by removing a path once Fleet owns the Helm release:
 #    that UNINSTALLS the release. Use spec.paused instead. This deleted
 #    karakeep on 2026-07-30 -- see FLEET-WIRING.md.
@@ -53,6 +58,7 @@ spec:
   pollingInterval: 60s
   paths:
     - 17-buzz/gwen
+    - 17-buzz/gwen-sandbox
     - 17-buzz/minio
     - 17-buzz/relay
   # `ash4d-lab` is a bespoke label already on the sdf1 cluster (c-nnzn9). Chosen
