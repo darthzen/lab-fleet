@@ -87,7 +87,7 @@ spec:
           value: "8000"
         # Full tool set for the six services we use.
         - name: TOOLS
-          value: "gmail,drive,calendar,docs,sheets,slides"
+          value: "gmail drive calendar docs sheets slides"
         - name: TOOL_TIER
           value: "complete"
         # Credentials on the PVC.
