@@ -4,7 +4,9 @@
 # systemd, zypper and a root disk that keeps every change. She reaches it over
 # SSH at gwen-sandbox.buzz.svc:22 as user `gwen` (passwordless sudo). Rick chose
 # a VM over a container on 2026-11-22 for the isolation and so she can mount
-# filesystems and roll back snapshots herself.
+# filesystems herself. The root filesystem is XFS, as SUSE's prebuilt image
+# ships it, so there are no snapshots to roll back to; Rick chose on 2026-11-22
+# to leave it that way over a manual btrfs reinstall.
 #
 # Needs KubeVirt (28-kubevirt) and CDI (29-cdi).
 #
@@ -21,8 +23,8 @@
 #
 # SSH KEY: her key pair is in ~/Developer/keys/gwen-sandbox/. The public half
 # is in gwen-sandbox.yaml (public keys are not secret). The private half is the
-# out-of-band Secret `gwen-sandbox-ssh` in this namespace, for her service to
-# mount once it has a shell tool:
+# out-of-band Secret `gwen-sandbox-ssh` in this namespace, which her service
+# mounts for its sandbox_run tool (see ../gwen/gwen.yaml):
 #   kubectl -n buzz create secret generic gwen-sandbox-ssh \
 #     --from-file=id_ed25519=$HOME/Developer/keys/gwen-sandbox/id_ed25519 \
 #     --from-file=id_ed25519.pub=$HOME/Developer/keys/gwen-sandbox/id_ed25519.pub
