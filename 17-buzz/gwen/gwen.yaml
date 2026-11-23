@@ -78,11 +78,17 @@
 # loaded" log line at start lists what she has. Removing GWEN_SKILLS_DIR takes
 # skills away; the rest of Gwen runs on.
 #
-# GITHUB (Rick 2026-11-23). skill-github.md gives her GitHub through GitHub's
-# hosted MCP server, with GITHUB_TOKEN from Secret gwen: a fine-grained PAT on
-# Rick's account, so she acts as darthzen on the repositories he selected.
-# The skill names 21 of the server's 46 tools (`tools=` in its header), about
-# 31k characters of context when it loads; all 46 would be about 130k.
+# GITHUB (Rick 2026-11-23). She acts as darthzen with GITHUB_TOKEN from
+# Secret gwen, a fine-grained PAT on Rick's account, on the repositories he
+# selected. skill-github.md is the procedure, in two halves:
+#   - Code changes: git on her machine (clone, branch, edit in place, push).
+#     The MCP file tools want a whole file as an argument and her tool output
+#     is cut in the middle, which stalled her on a 341-line manifest.
+#   - Pull requests, issues, merges: GitHub's hosted MCP server. The skill
+#     names 18 of its 46 tools (`tools=` in its header); all 46 would cost
+#     about 130k characters of context each time the skill loads.
+# The git credential is set up by hand on her machine; see CLUSTER AND
+# REGISTRY ACCESS in ../gwen-sandbox/fleet.yaml.
 #
 # NO PROBES. The service serves no HTTP endpoint. It exits if it cannot reach
 # the relay within 30 s of starting, and the Deployment restarts it; after

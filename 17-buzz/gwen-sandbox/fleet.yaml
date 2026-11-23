@@ -47,6 +47,15 @@
 #     A pod that runs her image needs imagePullSecrets `harbor-pull` in its
 #     namespace (ash4d-lab is a private project).
 #
+#   - GitHub (2026-11-23): git pushes as darthzen. ~/.local/bin/git-credential-gwen
+#     (mode 700) answers git's `get` with username x-access-token and the
+#     GITHUB_TOKEN value read at that moment from Secret buzz/gwen with
+#     kubectl, so no copy of the token is on her disk. Wired with:
+#       git config --global credential.https://github.com.helper /home/gwen/.local/bin/git-credential-gwen
+#       git config --global user.name Gwen
+#       git config --global user.email 3750780+darthzen@users.noreply.github.com
+#     Her procedure is ../gwen/skill-github.md.
+#
 # cloud-init runs on FIRST BOOT ONLY. Editing the userData below changes
 # nothing on a disk that has already booted; change the machine itself.
 defaultNamespace: buzz
