@@ -40,6 +40,12 @@
 # when the pod died is reported to the owner as failed on the next start.
 # Long-term memory is in Hindsight, not here.
 #
+# LIBRARY. Reference material she is asked to study (research reports, single
+# sources) goes to a third Hindsight bank, `library` (GWEN_LIBRARY_BANK), filed
+# by topic as a tag. It is never part of the recall that runs before a turn;
+# she reaches it only through her library_* tools. Hindsight creates the bank
+# on first use. The workflow she follows is the "Your library" part of SOUL.md.
+#
 # HER MACHINE. The sandbox_run tool is a shell on the VM in ../gwen-sandbox,
 # over SSH to its Service as user `gwen`. The private key comes from the
 # out-of-band Secret `gwen-sandbox-ssh` (see ../gwen-sandbox/fleet.yaml), mounted
@@ -111,7 +117,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: gwen
-        image: registry.ash4d.com/ash4d-lab/gwen:0.2.0
+        image: registry.ash4d.com/ash4d-lab/gwen:0.3.0
         imagePullPolicy: IfNotPresent
         env:
         - name: GWEN_ADAPTERS
