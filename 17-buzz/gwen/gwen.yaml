@@ -133,9 +133,11 @@ spec:
         # TELEGRAM_BOT_TOKEN comes from Secret gwen (bot @darthzen_gwenbot).
         - name: GWEN_ADAPTERS
           value: buzz,telegram
-        # The one Telegram account she answers, private chat only.
+        # The one Telegram account she answers, private chat only. Rick's
+        # numeric user id (@darthzen42), which unlike a username cannot be
+        # released and claimed by someone else.
         - name: TELEGRAM_OWNER
-          value: darthzen42
+          value: "8348730308"
         # The public URL, not the in-cluster Service: the relay binds one
         # community per request Host (see ../relay/values.yaml).
         - name: BUZZ_RELAY_URL
