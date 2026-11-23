@@ -29,6 +29,24 @@
 #     --from-file=id_ed25519=$HOME/Developer/keys/gwen-sandbox/id_ed25519 \
 #     --from-file=id_ed25519.pub=$HOME/Developer/keys/gwen-sandbox/id_ed25519.pub
 #
+# CLUSTER AND REGISTRY ACCESS (Rick, 2026-11-23). Set up by hand on the machine,
+# so a REBUILT VM needs all of it again:
+#   - Tools: podman, helm, git from zypper; kubectl v1.35.6 from dl.k8s.io in
+#     /usr/local/bin (Leap 16.0 has no kubectl package).
+#   - Kubernetes: ~/.kube/config holds the token of ServiceAccount buzz/gwen,
+#     which is cluster-admin. See gwen-cluster-access.yaml in this directory.
+#   - Harbor: robot account `robot$ash4d-lab+gwen`, push and pull in project
+#     ash4d-lab only, no expiry. Its token is in ~/Developer/keys/harbor/
+#     (gwen-robot.name, gwen-robot.token) and on the VM in
+#     ~/.config/containers/auth.json, written by:
+#       podman login --authfile ~/.config/containers/auth.json \
+#         --username 'robot$ash4d-lab+gwen' --password-stdin registry.ash4d.com
+#     She builds with rootless podman on the VM and pushes to
+#     registry.ash4d.com/ash4d-lab/<name>:<tag>. She can overwrite any tag in
+#     that project. To take it away, delete or disable the robot in Harbor.
+#     A pod that runs her image needs imagePullSecrets `harbor-pull` in its
+#     namespace (ash4d-lab is a private project).
+#
 # cloud-init runs on FIRST BOOT ONLY. Editing the userData below changes
 # nothing on a disk that has already booted; change the machine itself.
 defaultNamespace: buzz
