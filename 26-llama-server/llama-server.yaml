@@ -6,12 +6,12 @@ metadata:
   name: llama-server
   namespace: ai
 spec:
-  # PARKED since 2026-11-23 on Rick's instruction: Gwen's front model moved
-  # to OpenRouter, so nothing depends on this Deployment. It holds about
-  # 30 GiB of RAM and both V100s when running; the model files stay on disk.
+  # RUNNING since 2026-11-23 (Rick): Gwen's front model is back on the local
+  # uncensored Qwen 27B served here; the OpenRouter preset is the fallback.
+  # It holds about 30 GiB of RAM and both V100s. The model files stay on disk.
   # Fleet is the source of truth for this number — change it here, not with
   # `kubectl scale`, or the next reconcile puts it back.
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: llama-server
