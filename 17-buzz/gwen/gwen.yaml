@@ -40,6 +40,17 @@
 # when the pod died is reported to the owner as failed on the next start.
 # Long-term memory is in Hindsight, not here.
 #
+# HER MACHINE. The sandbox_run tool is a shell on the VM in ../gwen-sandbox,
+# over SSH to its Service as user `gwen`. The private key comes from the
+# out-of-band Secret `gwen-sandbox-ssh` (see ../gwen-sandbox/fleet.yaml), mounted
+# read-only. GWEN_SANDBOX_HOST_KEY pins the VM's ed25519 host key; the tool
+# refuses a machine that answers with any other key. The VM generates that key
+# on first boot, so a REBUILT VM has a new one and every command fails with
+# "Host denied (verification failed)" until the value below is replaced with
+# the output of, on the new VM:
+#   ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+# Removing GWEN_SANDBOX_HOST takes the tool away; the rest of Gwen runs on.
+#
 # NO PROBES. The service serves no HTTP endpoint. It exits if it cannot reach
 # the relay within 30 s of starting, and the Deployment restarts it; after
 # that it reconnects on its own with backoff.
@@ -100,7 +111,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: gwen
-        image: registry.ash4d.com/ash4d-lab/gwen:0.1.0
+        image: registry.ash4d.com/ash4d-lab/gwen:0.2.0
         imagePullPolicy: IfNotPresent
         env:
         - name: GWEN_ADAPTERS
@@ -125,6 +136,13 @@ spec:
         # SOUL.md from this directory; see PERSONA above.
         - name: GWEN_PERSONA_FILE
           value: /persona/SOUL.md
+        # Her VM; see HER MACHINE above.
+        - name: GWEN_SANDBOX_HOST
+          value: gwen-sandbox.buzz.svc.cluster.local
+        - name: GWEN_SANDBOX_KEY_FILE
+          value: /sandbox-ssh/id_ed25519
+        - name: GWEN_SANDBOX_HOST_KEY
+          value: "SHA256:75ArslEV+OzYEM5kd+w8mUXfZIDX2K8jAAXW56fVgZw"
         envFrom:
         - secretRef:
             name: gwen
@@ -144,12 +162,23 @@ spec:
         - name: persona
           mountPath: /persona
           readOnly: true
+        - name: sandbox-ssh
+          mountPath: /sandbox-ssh
+          readOnly: true
       volumes:
       - name: data
         persistentVolumeClaim:
           claimName: gwen-data
       - name: tmp
         emptyDir: {}
+      # Private half only. 0440 with fsGroup 1000 lets the service read it.
+      - name: sandbox-ssh
+        secret:
+          secretName: gwen-sandbox-ssh
+          defaultMode: 0440
+          items:
+          - key: id_ed25519
+            path: id_ed25519
       # kustomize appends the content hash to this name.
       - name: persona
         configMap:

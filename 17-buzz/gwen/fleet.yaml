@@ -28,6 +28,9 @@
 #          --pubkey <hex> --role member
 #   4. The OpenRouter preset(s) named in gwen.yaml. Until a preset exists every
 #      call that names it fails, which is the intent — see gwen.yaml.
+#   5. Secret `gwen-sandbox-ssh` (her SSH key for the VM in ../gwen-sandbox;
+#      the command is in ../gwen-sandbox/fleet.yaml). The pod will not start
+#      without it.
 defaultNamespace: buzz
 
 helm:
