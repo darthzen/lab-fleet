@@ -34,6 +34,9 @@ configMapGenerator:
   - kubernetes.md=skill-kubernetes.md
   - model-hosting.md=skill-model-hosting.md
   - documents.md=skill-documents.md
+  - google-workspace.md=skill-google-workspace.md
+  - calendar.md=skill-calendar.md
+  - email-triage.md=skill-email-triage.md
 generatorOptions:
   labels:
     app: gwen
