@@ -35,6 +35,14 @@
 # created in the dashboard or with a management key, never with the inference
 # key in the Secret.
 #
+# FRONT MODEL IS LOCAL since 2026-11-22 (Rick). Her front model is the
+# uncensored Qwen 27B on our own llama-server (../../26-llama-server), not
+# OpenRouter, so her prompts stay on sdf1. She cannot answer while that
+# Deployment is parked at 0. Research and Jev routing still use OpenRouter.
+# Rick intends to move back once he has the OpenRouter enterprise plan. To
+# move back: in the env below set GWEN_FRONT_MODEL to "@preset/gwen-front" and
+# delete GWEN_FRONT_BASE_URL and GWEN_FRONT_TEMPERATURE. Nothing else changes.
+#
 # STATE. /data (PVC gwen-data) holds conversation history and research job
 # records as plain JSON files, so a restart keeps both: a job that was running
 # when the pod died is reported to the owner as failed on the next start.
@@ -117,7 +125,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: gwen
-        image: registry.ash4d.com/ash4d-lab/gwen:0.3.0
+        image: registry.ash4d.com/ash4d-lab/gwen:0.4.0
         imagePullPolicy: IfNotPresent
         env:
         - name: GWEN_ADAPTERS
@@ -129,8 +137,15 @@ spec:
         # Rick. Same value as ownerPubkey in ../relay/values.yaml.
         - name: BUZZ_OWNER_PUBKEY
           value: 94005a8c7fd13215b1191163c0990d406aa50886893819015aa03fd35ac0a075
+        # See FRONT MODEL IS LOCAL above. The OpenRouter value was
+        # "@preset/gwen-front" with no BASE_URL or TEMPERATURE.
         - name: GWEN_FRONT_MODEL
-          value: "@preset/gwen-front"
+          value: qwen3.8-27b-uncensored
+        - name: GWEN_FRONT_BASE_URL
+          value: http://llama-server.ai.svc.cluster.local:8080/v1
+        # llama-server defaults to 0.15, set for agent work; her voice needs more.
+        - name: GWEN_FRONT_TEMPERATURE
+          value: "0.8"
         # The background research worker. A plain slug for now, so the ZDR
         # policy comes from the service. Rick's decision (2026-11-22) is to
         # move this to a preset with these same settings so the model is a

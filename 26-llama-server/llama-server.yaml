@@ -6,8 +6,8 @@ metadata:
   name: llama-server
   namespace: ai
 spec:
-  # RUNNING since 2026-11-22 (Rick): brought back to test Gwen's persona
-  # against the uncensored 27B. It holds about 30 GiB of RAM and both V100s,
+  # RUNNING since 2026-11-22 (Rick): Gwen's front model is served from here
+  # (../17-buzz/gwen/gwen.yaml), so parking this stops her answering. It holds about 30 GiB of RAM and both V100s,
   # so 04-ollama (replicaCount: 0) and 07-comfyui (replicas: 0) must stay
   # parked. Set this to 0 to park it again; the model files stay on disk.
   # Fleet is the source of truth for this number — change it here, not with
