@@ -125,7 +125,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: gwen
-        image: registry.ash4d.com/ash4d-lab/gwen:0.5.0
+        image: registry.ash4d.com/ash4d-lab/gwen:0.6.0
         imagePullPolicy: IfNotPresent
         env:
         # Telegram added 2026-11-22 (Rick): the Buzz iPhone app has no push for
@@ -133,6 +133,9 @@ spec:
         # TELEGRAM_BOT_TOKEN comes from Secret gwen (bot @darthzen_gwenbot).
         - name: GWEN_ADAPTERS
           value: buzz,telegram
+        # Dates in search_history are read and shown in this zone.
+        - name: GWEN_TIMEZONE
+          value: America/Chicago
         # The one Telegram account she answers, private chat only. Rick's
         # numeric user id (@darthzen42), which unlike a username cannot be
         # released and claimed by someone else.
