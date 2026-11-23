@@ -165,6 +165,12 @@ spec:
         # IS ON OPENROUTER above for the local alternative.
         - name: GWEN_FRONT_MODEL
           value: "@preset/gwen-front"
+        # The service default is "none", and a value sent in the request wins
+        # over the preset's own reasoning setting. Inkling 2 Small (the
+        # preset's model since 2026-11-23) refuses "none": "Reasoning is
+        # mandatory for this endpoint and cannot be disabled."
+        - name: GWEN_FRONT_EFFORT
+          value: minimal
         # The background research worker. A plain slug for now, so the ZDR
         # policy comes from the service. Rick's decision (2026-11-22) is to
         # move this to a preset with these same settings so the model is a
