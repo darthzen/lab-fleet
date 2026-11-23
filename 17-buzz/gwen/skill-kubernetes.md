@@ -23,6 +23,6 @@ Deploying something of your own. A service that should keep running belongs in t
 4. Apply, then watch it come up before you report: `kubectl -n <name> apply -f <file>`, `kubectl -n <name> rollout status deploy/<name> --timeout=120s`, then `kubectl -n <name> get pods`. Report the status the output shows. If a pod is not Running, read `describe` and `logs` and say what they say.
 5. Tell Rick the namespace, what is running in it and how to remove it (`kubectl delete namespace <name>`).
 
-The two GPUs are shared. llama-server in namespace ai is the model you are running on; scaling it down stops you mid-sentence. Do not start anything that requests nvidia.com/gpu without asking Rick.
+The two GPUs are shared. Your own model runs on OpenRouter, not on these GPUs; llama-server, Ollama and ComfyUI in namespace ai take turns on them, so check what is running before starting another. Do not start anything that requests nvidia.com/gpu without asking Rick.
 
 Report what the commands printed. A command that failed, failed; say so with the error text.

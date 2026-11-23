@@ -31,6 +31,7 @@ configMapGenerator:
   - build-image.md=skill-build-image.md
   - github.md=skill-github.md
   - kubernetes.md=skill-kubernetes.md
+  - model-hosting.md=skill-model-hosting.md
 generatorOptions:
   labels:
     app: gwen
