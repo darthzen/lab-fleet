@@ -198,10 +198,13 @@ spec:
         - '0.15'
         - --top-p
         - '0.9'
+        # top-k 40 and min-p 0.05 since 2026-11-22 (Rick), for Gwen's prose:
+        # a wider candidate pool, cut relative to the top token's probability.
+        # Before that: top-k 20, min-p 0.0, set for agent work.
         - --top-k
-        - '20'
+        - '40'
         - --min-p
-        - '0.0'
+        - '0.05'
         - --presence-penalty
         - '0'
         - --repeat-penalty
