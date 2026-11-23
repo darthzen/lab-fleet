@@ -65,6 +65,18 @@
 #   ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
 # Removing GWEN_SANDBOX_HOST takes the tool away; the rest of Gwen runs on.
 #
+# SKILLS (0.7.0, Rick 2026-11-23). Procedures she reads only when a job needs
+# one, so they stay out of SOUL.md. Each is a markdown file in skills/ in this
+# directory, mounted at /skills from a generated ConfigMap (kustomization.yaml).
+# Her instructions carry one line per skill; she reads a body with load_skill.
+# A skill can name MCP servers with `mcp:` header lines; their tools are listed
+# to her when the skill loads and called through skill_tool, so no MCP tool is
+# in her context until then. A server that wants a token gets it from an env
+# var named in the skill (`bearer=NAME`); put that var in Secret gwen. A skill
+# file with a mistake is skipped and logged as "skill skipped"; the "skills
+# loaded" log line at start lists what she has. Removing GWEN_SKILLS_DIR takes
+# skills away; the rest of Gwen runs on.
+#
 # NO PROBES. The service serves no HTTP endpoint. It exits if it cannot reach
 # the relay within 30 s of starting, and the Deployment restarts it; after
 # that it reconnects on its own with backoff.
@@ -125,7 +137,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: gwen
-        image: registry.ash4d.com/ash4d-lab/gwen:0.6.1
+        image: registry.ash4d.com/ash4d-lab/gwen:0.7.0
         imagePullPolicy: IfNotPresent
         env:
         # Telegram added 2026-11-22 (Rick): the Buzz iPhone app has no push for
@@ -168,6 +180,9 @@ spec:
         # SOUL.md from this directory; see PERSONA above.
         - name: GWEN_PERSONA_FILE
           value: /persona/SOUL.md
+        # See SKILLS above.
+        - name: GWEN_SKILLS_DIR
+          value: /skills
         # Her VM; see HER MACHINE above.
         - name: GWEN_SANDBOX_HOST
           value: gwen-sandbox.buzz.svc.cluster.local
@@ -197,6 +212,9 @@ spec:
         - name: sandbox-ssh
           mountPath: /sandbox-ssh
           readOnly: true
+        - name: skills
+          mountPath: /skills
+          readOnly: true
       volumes:
       - name: data
         persistentVolumeClaim:
@@ -215,3 +233,7 @@ spec:
       - name: persona
         configMap:
           name: gwen-persona
+      # Likewise.
+      - name: skills
+        configMap:
+          name: gwen-skills
