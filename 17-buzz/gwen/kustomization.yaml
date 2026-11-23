@@ -29,6 +29,7 @@ configMapGenerator:
   namespace: buzz
   files:
   - build-image.md=skill-build-image.md
+  - github.md=skill-github.md
   - kubernetes.md=skill-kubernetes.md
 generatorOptions:
   labels:

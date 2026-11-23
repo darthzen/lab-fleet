@@ -78,6 +78,12 @@
 # loaded" log line at start lists what she has. Removing GWEN_SKILLS_DIR takes
 # skills away; the rest of Gwen runs on.
 #
+# GITHUB (Rick 2026-11-23). skill-github.md gives her GitHub through GitHub's
+# hosted MCP server, with GITHUB_TOKEN from Secret gwen: a fine-grained PAT on
+# Rick's account, so she acts as darthzen on the repositories he selected.
+# The skill names 21 of the server's 46 tools (`tools=` in its header), about
+# 31k characters of context when it loads; all 46 would be about 130k.
+#
 # NO PROBES. The service serves no HTTP endpoint. It exits if it cannot reach
 # the relay within 30 s of starting, and the Deployment restarts it; after
 # that it reconnects on its own with backoff.
@@ -138,7 +144,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: gwen
-        image: registry.ash4d.com/ash4d-lab/gwen:0.7.0
+        image: registry.ash4d.com/ash4d-lab/gwen:0.7.1
         imagePullPolicy: IfNotPresent
         env:
         # Telegram added 2026-11-22 (Rick): the Buzz iPhone app has no push for
@@ -165,12 +171,9 @@ spec:
         # IS ON OPENROUTER above for the local alternative.
         - name: GWEN_FRONT_MODEL
           value: "@preset/gwen-front"
-        # The service default is "none", and a value sent in the request wins
-        # over the preset's own reasoning setting. Inkling 2 Small (the
-        # preset's model since 2026-11-23) refuses "none": "Reasoning is
-        # mandatory for this endpoint and cannot be disabled."
-        - name: GWEN_FRONT_EFFORT
-          value: minimal
+        # No GWEN_FRONT_EFFORT (Rick, 2026-11-23): reasoning is set in the
+        # preset. From 0.7.1 the service sends no reasoning field for a preset
+        # unless this variable is set; a value set here wins over the preset.
         # The background research worker. A plain slug for now, so the ZDR
         # policy comes from the service. Rick's decision (2026-11-22) is to
         # move this to a preset with these same settings so the model is a
