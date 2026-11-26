@@ -151,7 +151,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: gwen
-        image: registry.ash4d.com/ash4d-lab/gwen:0.9.0
+        image: registry.ash4d.com/ash4d-lab/gwen:0.9.1
         imagePullPolicy: IfNotPresent
         env:
         # Telegram added 2026-11-22 (Rick): the Buzz iPhone app has no push for
