@@ -143,8 +143,11 @@ spec:
         # memory — the cgroup limit below covers it. 16 -> 32 GiB on
         # 2026-10-28 with --parallel 5 (more slots parking state); the node
         # had ~37 GiB available, ~10 GiB anonymous use outside this pod.
+        # Back to 16 GiB on 2026-11-26: use outside this pod had grown to
+        # ~21 GiB (Gwen's sandbox VM among it) and the node (62.7 GiB, no
+        # swap) hit a global OOM four times with this process at 36-38 GiB.
         - --cache-ram
-        - '32768'
+        - '16384'
         # --cache-reuse 256 removed 2026-10-28: b11058 logs "cache_reuse is not
         # supported by this context, it will be disabled" for this hybrid model
         # with MTP, so the flag did nothing.
@@ -261,17 +264,20 @@ spec:
         # from runtimeClassName: nvidia plus the explicit UUIDs above.
         # Memory: the weights are on the GPUs; host RAM holds the mmap page
         # cache for the 29 GB file (file-backed, reclaimable) plus up to
-        # 32 GiB of anonymous prompt cache (--cache-ram). 48Gi covers the
-        # cache plus process overhead; under pressure the kernel evicts the
-        # mapped file pages, which are only read at load (weights live on
-        # the GPUs), so the cost is a slower cold restart, not an OOM.
+        # 16 GiB of anonymous prompt cache (--cache-ram). 28Gi covers the
+        # cache plus process overhead, and sits below what the node can give
+        # so the container is contained before the node is; under pressure
+        # the kernel evicts the mapped file pages, which are only read at
+        # load (weights live on the GPUs), so the cost is a slower cold
+        # restart, not an OOM. The 24Gi request makes the scheduler account
+        # for what this pod really uses.
         resources:
           limits:
             cpu: '14'
-            memory: 48Gi
+            memory: 28Gi
           requests:
             cpu: '4'
-            memory: 8Gi
+            memory: 24Gi
         volumeMounts:
         - mountPath: /models
           name: models
