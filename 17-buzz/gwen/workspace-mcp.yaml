@@ -1,0 +1,148 @@
+# Google Workspace MCP — streamable-HTTP MCP server for Gmail, Calendar, Drive,
+# Docs, Sheets and Slides. Image from GHCR, pinned by digest.
+#
+# AUTH. The /mcp endpoint carries no auth of its own (legacy OAuth 2.0 mode,
+# MCP_ENABLE_OAUTH21 unset). The per-account Google OAuth token is what
+# authorises API calls; the endpoint itself is open to anything that can reach
+# the Service. That is why the Service stays ClusterIP: only pods in the
+# cluster can talk to it, and we only give the buzz namespace a path.
+#
+# CREDENTIALS. The Google OAuth token and refresh token are written to
+# /home/app/.google_workspace_mcp/credentials (WORKSPACE_MCP_CREDENTIALS_DIR).
+# That path is on the workspace-mcp-credentials PVC so the token survives pod
+# restarts. fsGroup 1000 matches the container's runAsUser (uid 1000, user
+# "app") so the directory is writable.
+#
+# ONE-TIME CONSENT. On first run the server needs a one-time Google OAuth
+# consent. From your laptop:
+#   kubectl -n buzz port-forward svc/workspace-mcp 8000:8000
+# then open http://localhost:8000/oauth/authorize in a browser (the redirect
+# URI is http://localhost:8000/oauth2callback, OAUTHLIB_INSECURE_TRANSPORT=1).
+# Complete the consent; the token is written to the PVC. Subsequent pods
+# read it without another consent.
+#
+# TOOLS. TOOL_TIER=complete loads every tool in every tier (core + extended +
+# complete) for the six services named in TOOLS. That is what gives us
+# draft_gmail_message, batch_modify_gmail_message_labels,
+# batch_update_presentation, etc. without an extra flag.
+#
+# RESOURCES. Modest: it is an idle Python server most of the time.
+#
+# After changing this file, let Fleet roll it; never `rollout restart` a
+# Fleet-managed Deployment (it writes an annotation Fleet then reverts).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: workspace-mcp-credentials
+  namespace: buzz
+  labels:
+    app: workspace-mcp
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: freezer
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workspace-mcp
+  namespace: buzz
+  labels:
+    app: workspace-mcp
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: workspace-mcp
+  template:
+    metadata:
+      labels:
+        app: workspace-mcp
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: workspace-mcp
+        image: ghcr.io/taylorwilsdon/google_workspace_mcp:2.6.0@sha256:0eefaf1da2a8625e16903ff2461cb6685e745fac1ceae1a85a61406f9376265d
+        imagePullPolicy: IfNotPresent
+        env:
+        # Bind address and port. The container's CMD already runs with
+        # --transport streamable-http; these env vars are picked up by the
+        # Dockerfile's CMD expansion.
+        - name: WORKSPACE_MCP_HOST
+          value: "0.0.0.0"
+        - name: WORKSPACE_MCP_PORT
+          value: "8000"
+        # Full tool set for the six services we use.
+        - name: TOOLS
+          value: "gmail drive calendar docs sheets slides"
+        - name: TOOL_TIER
+          value: "complete"
+        # Credentials on the PVC.
+        - name: WORKSPACE_MCP_CREDENTIALS_DIR
+          value: /home/app/.google_workspace_mcp/credentials
+        # Headless OAuth: the consent URL points at localhost:8000, which we
+        # reach through kubectl port-forward. OAUTHLIB_INSECURE_TRANSPORT=1
+        # lets the http:// (not https://) redirect URI pass the OAuth library's
+        # check.
+        - name: GOOGLE_OAUTH_REDIRECT_URI
+          value: "http://localhost:8000/oauth2callback"
+        - name: OAUTHLIB_INSECURE_TRANSPORT
+          value: "1"
+        # MCP_ENABLE_OAUTH21 is deliberately unset: legacy OAuth 2.0 mode
+        # means /mcp needs no Authorization header.
+        envFrom:
+        - secretRef:
+            name: workspace-mcp
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+        resources:
+          requests: {cpu: 50m, memory: 128Mi}
+          limits: {cpu: "1", memory: 512Mi}
+        readinessProbe:
+          tcpSocket:
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        volumeMounts:
+        - name: credentials
+          mountPath: /home/app/.google_workspace_mcp/credentials
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: credentials
+        persistentVolumeClaim:
+          claimName: workspace-mcp-credentials
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workspace-mcp
+  namespace: buzz
+  labels:
+    app: workspace-mcp
+spec:
+  type: ClusterIP
+  selector:
+    app: workspace-mcp
+  ports:
+  - name: mcp
+    port: 8000
+    targetPort: 8000
+    protocol: TCP
