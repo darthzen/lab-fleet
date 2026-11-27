@@ -13,7 +13,7 @@ Tools.
 
 Behaviour.
 - The window is walked newest-first: Gmail is searched by message id in pages of 500, then headers are fetched in batches of 100 with `format=metadata`. A message counts as mailing-list mail iff its headers carry `List-Unsubscribe`.
-- The sheet has one row per sender, sorted by count: Keep, Name, Address, Count, First seen, Last seen, List-Id, Unsubscribe, Sample. Rick marks Keep; a rerun re-reads the sheet first, so his marks survive the rewrite.
+- The sheet has one row per sender, sorted by count: Keep, Name, Address, Count, First seen, Last seen, Unsubscribe, Sample. Rick marks Keep; a rerun re-reads the sheet first, so his marks survive the rewrite.
 - State lives in one file under Gwen's data dir (`mail-census.json`): a restart continues where it stopped, and a rerun over the same window is de-duplicated, so nothing is double counted.
 - A census takes a while for a wide window (minutes for a few months of mail). Tell Rick it is running rather than making him wait; check `mail_census_status` when he asks.
 

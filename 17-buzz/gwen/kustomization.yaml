@@ -38,6 +38,7 @@ configMapGenerator:
   - calendar.md=skill-calendar.md
   - email-triage.md=skill-email-triage.md
   - daily-briefing.md=skill-daily-briefing.md
+  - mail-census.md=skill-mail-census.md
 generatorOptions:
   labels:
     app: gwen
